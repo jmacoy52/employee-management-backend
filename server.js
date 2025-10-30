@@ -1,10 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const db = require('./backend/config/db');
-const employeeRoutes = require('./backend/routes/employeeRoute');
-const userRoutes = require('./backend/routes/userRoute');
-const auditLogRoutes = require('./backend/routes/auditLogRoute');
+const db = require('./config/db');
+const employeeRoutes = require('./routes/employeeRoute');
+const userRoutes = require('./routes/userRoute');
+const auditLogRoutes = require('./routes/auditLogRoute');
 
 
 dotenv.config();
