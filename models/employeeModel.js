@@ -1,7 +1,25 @@
 const db = require('../config/db');
 
 class EmployeeModel {
-  // Get all employees
+  // Get all employees with pagination
+  static getAllEmployeesPaginated(limit, offset, callback) {
+    const query = 'SELECT * FROM employees ORDER BY id DESC LIMIT ? OFFSET ?';
+    db.query(query, [limit, offset], (err, results) => {
+      if (err) return callback(err);
+      callback(null, results);
+    });
+  }
+
+  // Get total count of employees
+  static getTotalCount(callback) {
+    const query = 'SELECT COUNT(*) as total FROM employees';
+    db.query(query, (err, results) => {
+      if (err) return callback(err);
+      callback(null, results[0].total);
+    });
+  }
+
+  // Get all employees (without pagination)
   static getAllEmployees(callback) {
     const query = 'SELECT * FROM employees ORDER BY id DESC';
     db.query(query, (err, results) => {
@@ -13,15 +31,16 @@ class EmployeeModel {
   // Insert a new employee (created_at handled by DB)
   static insertEmployee(employeeData, callback) {
     const query = `
-      INSERT INTO employees (FullName, position, Department, email, salary)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO employees (FullName, position, Department, email, salary, start_date)
+      VALUES (?, ?, ?, ?, ?, ?)
     `;
     const values = [
       employeeData.FullName,
       employeeData.position,
       employeeData.Department,
       employeeData.email || null,
-      employeeData.salary
+      employeeData.salary,
+      employeeData.start_date || new Date().toISOString().split('T')[0]
     ];
     db.query(query, values, callback);
   }

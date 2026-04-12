@@ -1,0 +1,131 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0 3px;
+  height: 64px; /* Reduced height */
+  background-color: #4779ee; /* Blue */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+   border-radius: 10px;
+   z-index: 0;
+
+}
+
+.logo {
+  color: white;
+  font-size: 1.5rem;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.navbar {
+  display: flex;
+  align-items: center;
+  color: white;
+  gap: 24px; /* Space between logo and nav buttons */
+}
+
+.navbar {
+  display: flex;
+  gap: 16px; /* Adds space between Help and Sign In */
+
+}
+
+.navbar a, .help-btn {
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-weight: 500;
+  background-color: rgb(245, 132, 119);
+  transition: background-color 0.3s ease;
+}
+
+.navbar a:hover, .help-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.help-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.help-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 600px;
+  width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.help-content h3 {
+  margin-top: 0;
+  color: #333;
+}
+
+.help-sections {
+  margin-top: 20px;
+}
+
+.help-section {
+  margin-bottom: 20px;
+}
+
+.help-section h4 {
+  color: #4779ee;
+  margin-bottom: 10px;
+}
+
+.help-section p, .help-section ul {
+  color: #666;
+  line-height: 1.6;
+}
+
+.help-section ul {
+  padding-left: 20px;
+}
+
+.close-help {
+  background-color: #4779ee;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 20px;
+  transition: background-color 0.3s ease;
+}
+
+.close-help:hover {
+  background-color: #3a5fc7;
+}
+
+/* Responsive layout */
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    align-items: flex-start;
+    height: auto;
+    padding: 16px;
+  }
+
+  .navbar {
+    margin-top: 10px;
+  }
+
+  .help-content {
+    width: 95%;
+    padding: 15px;
+  }
+}

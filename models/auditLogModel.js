@@ -13,9 +13,9 @@ class AuditLogModel {
   // Get recent activities (last 10, newest first)
   static getRecentActivities(callback) {
     const query = `
-      SELECT al.id, al.actions, al.descriptions, al.created_at, u.username
+      SELECT al.id, al.action, al.description, al.created_at, u.username
       FROM audit_logs al
-      JOIN users u ON al.userId = u.id
+      JOIN users u ON al.user_id = u.id
       ORDER BY al.created_at DESC
       LIMIT 10
     `;
@@ -28,13 +28,13 @@ class AuditLogModel {
   // Insert a log
   static insertLog(logData, callback) {
     const query = `
-      INSERT INTO audit_logs (userId, actions, descriptions)
+      INSERT INTO audit_logs (user_id, action, description)
       VALUES (?, ?, ?)
     `;
     const values = [
       logData.userId,      // Who did the action
-      logData.actions,     // e.g., LOGIN, CREATE_EMPLOYEE
-      logData.descriptions // Details
+      logData.action,      // e.g., LOGIN, CREATE_EMPLOYEE
+      logData.description  // Details
     ];
     db.query(query, values, callback);
   }

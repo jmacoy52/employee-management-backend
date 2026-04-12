@@ -10,15 +10,6 @@ class EmployeeController {
         return res.status(500).json({ error: 'Failed to fetch employees' });
       }
 
-      // Log this action
-      AuditLogModel.insertLog({
-        userId: req.user.id,
-        actions: 'VIEW_EMPLOYEES',
-        descriptions: `User ${req.user.email} viewed all employees`
-      }, (logErr) => {
-        if (logErr) console.error('Failed to insert audit log:', logErr);
-      });
-
       res.status(200).json(data);
     });
   }
@@ -125,15 +116,6 @@ class EmployeeController {
       if (!employee) {
         return res.status(404).json({ error: 'Employee not found' });
       }
-
-      // Log this action
-      AuditLogModel.insertLog({
-        userId: req.user.id,
-        actions: 'VIEW_EMPLOYEE',
-        descriptions: `User ${req.user.email} viewed employee ${employeeId}`
-      }, (logErr) => {
-        if (logErr) console.error('Failed to insert audit log:', logErr);
-      });
 
       res.status(200).json(employee);
     });

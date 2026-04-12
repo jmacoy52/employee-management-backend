@@ -1,0 +1,132 @@
+/* General form styling */
+.create-form {
+  max-width: 500px;
+  margin: 2rem auto;
+  padding: 2rem; /* <-- Increased padding for inner spacing */
+  border: 1px solid #ccc;
+  border-radius: 12px;
+  background-color: #f9f9f9;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+
+.create-form input {
+  padding: 0.75rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+  width: 100%;
+}
+
+.create-form button {
+  padding: 0.75rem;
+  background-color: #007bff;
+  color: white;
+  font-weight: bold;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.create-form button:hover {
+  background-color: #0056b3;
+}
+
+.error {
+  color: #d32f2f;
+  font-size: 0.95rem;
+  background-color: #ffebee;
+  padding: 0.5rem;
+  border-radius: 6px;
+}
+
+/* Table styling */
+.employee-table-container {
+  margin-top: 20px;
+  padding: 1rem;
+  background-color: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  overflow-x: auto;
+}
+
+.employee-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 800px;
+}
+
+.employee-table th,
+.employee-table td {
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.employee-table th {
+  background-color: rgb(108, 108, 255);
+  font-weight: 600;
+  color: #333;
+}
+
+.employee-table tr:hover {
+  background-color: aliceblue;
+  transition: background 0.3s ease;
+}
+
+.employee-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.employee-actions button {
+  background: #0066cc;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.employee-actions button:hover {
+  background: #004a99;
+}
+
+
+.stats-container {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 20px;
+  padding: 1rem;
+  background-color: #f7fafc;
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: white;
+  padding: 1rem 1.5rem;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+  min-width: 180px;
+}
+
+.stat-card h4 {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.stat-card p {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: bold;
+}

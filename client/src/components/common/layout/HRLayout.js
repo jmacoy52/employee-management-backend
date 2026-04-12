@@ -1,0 +1,105 @@
+import React, { useState } from 'react';
+import { useAuth } from '../../../contexts/AuthContext';
+import { Users, FileText, BarChart3, Settings, Menu, X, Bell, Search } from 'lucide-react';
+
+const HRLayout = ({ children }) => {
+  const { user } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+
+  const menuItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/hr/dashboard' },
+    { id: 'employees', label: 'Employees', icon: Users, path: '/hr/employees' },
+    { id: 'departments', label: 'Departments', icon: FileText, path: '/hr/departments' },
+    { id: 'reports', label: 'Reports', icon: BarChart3, path: '/hr/reports' },
+    { id: 'profile', label: 'My Profile', icon: Settings, path: '/hr/profile' },
+    { id: 'notifications', label: 'Notifications', icon: Bell, path: '/hr/notifications' }
+  ];
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex">
+      {/* Sidebar */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="flex items-center justify-between h-16 px-4 bg-gray-800">
+          <h1 className="text-white text-lg font-semibold">EmploCore HR</h1>
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="text-gray-400 hover:text-white transition-colors"
+          >
+            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
+        
+        <nav className="mt-8 px-4">
+          <ul className="space-y-2">
+            {menuItems.map((item) => (
+              <li key={item.id}>
+                <a
+                  href={item.path}
+                  className="flex items-center px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors"
+                >
+                  <item.icon size={20} className="mr-3" />
+                  {item.label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      </div>
+
+      {/* Main Content */}
+      <div className={`flex-1 transition-all duration-300 ease-in-out ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
+        {/* Top Bar */}
+        <header className="bg-white shadow-sm border-b border-gray-200">
+          <div className="flex items-center justify-between px-6 py-4">
+            <div className="flex items-center flex-1">
+              <div className="relative">
+                <Search size={20} className="absolute left-3 top-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search employees, departments..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 block w-64"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-4">
+              {/* Notifications */}
+              <div className="relative">
+                <button
+                  onClick={() => setNotificationsOpen(!notificationsOpen)}
+                  className="p-2 text-gray-600 hover:text-gray-900 transition-colors relative"
+                >
+                  <Bell size={20} />
+                  <span className="absolute top-0 right-0 h-2 w-2 bg-red-500 rounded-full animate-pulse"></span>
+                </button>
+              </div>
+
+              {/* User Menu */}
+              <div className="relative">
+                <button className="flex items-center space-x-2 p-2 text-gray-700 hover:text-gray-900 transition-colors">
+                  <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold">
+                    {user?.username?.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="text-sm font-medium">{user?.username}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <main className="flex-1 overflow-auto">
+          <div className="py-6">
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+};
+
+export default HRLayout;

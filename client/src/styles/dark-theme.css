@@ -1,0 +1,195 @@
+/* Dark Theme Styles */
+
+.dark-theme {
+  /* Base colors */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #94a3b8;
+  --border-color: #334155;
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --accent-color: #3b82f6;
+  --accent-hover: #2563eb;
+}
+
+/* Apply dark theme to common elements */
+.dark-theme body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.dark-theme .page-header,
+.dark-theme .header-content {
+  background: var(--bg-secondary);
+  border-bottom-color: var(--border-color);
+}
+
+.dark-theme .sidebar {
+  background: var(--bg-secondary);
+  border-right-color: var(--border-color);
+}
+
+.dark-theme .sidebar-item {
+  color: var(--text-secondary);
+}
+
+.dark-theme .sidebar-item:hover,
+.dark-theme .sidebar-item.active {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.dark-theme .main-content {
+  background: var(--bg-primary);
+}
+
+.dark-theme .dashboard-container {
+  background: var(--bg-primary);
+}
+
+.dark-theme .quick-action-card,
+.dark-theme .stats-card,
+.dark-theme .employee-card,
+.dark-theme .department-card,
+.dark-theme .overview-card,
+.dark-theme .report-section {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+  box-shadow: 0 4px 20px var(--shadow-color);
+}
+
+.dark-theme .page-content,
+.dark-theme .add-employee-container .page-content {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+.dark-theme .form-group input,
+.dark-theme .form-group select,
+.dark-theme .form-group textarea {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.dark-theme .form-group input:focus,
+.dark-theme .form-group select:focus,
+.dark-theme .form-group textarea:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.2);
+}
+
+.dark-theme .btn-primary {
+  background: var(--accent-color);
+}
+
+.dark-theme .btn-primary:hover {
+  background: var(--accent-hover);
+}
+
+.dark-theme .btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-color);
+}
+
+.dark-theme .btn-secondary:hover {
+  background: var(--bg-primary);
+}
+
+.dark-theme .modal-content {
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+.dark-theme .modal-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.dark-theme .loading-state {
+  color: var(--text-secondary);
+}
+
+.dark-theme .empty-state {
+  color: var(--text-secondary);
+}
+
+/* Specific component dark theme overrides */
+.dark-theme .header-title {
+  color: var(--text-primary);
+}
+
+.dark-theme .stat-number {
+  color: var(--text-primary);
+}
+
+.dark-theme .stat-label {
+  color: var(--text-secondary);
+}
+
+.dark-theme .employee-info h3 {
+  color: var(--text-primary);
+}
+
+.dark-theme .employee-info p {
+  color: var(--text-secondary);
+}
+
+.dark-theme .department-icon {
+  background: var(--bg-tertiary);
+  color: var(--accent-color);
+}
+
+.dark-theme .card-icon {
+  background: var(--bg-tertiary);
+  color: var(--accent-color);
+}
+
+.dark-theme .search-input {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.dark-theme .search-input:focus {
+  background: var(--bg-secondary);
+}
+
+.dark-theme .department-select {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.dark-theme .table-header {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.dark-theme .table-row {
+  border-bottom-color: var(--border-color);
+}
+
+.dark-theme .table-row:hover {
+  background: var(--bg-tertiary);
+}
+
+.dark-theme .tab-btn {
+  color: var(--text-secondary);
+}
+
+.dark-theme .tab-btn.active {
+  color: var(--accent-color);
+  background: var(--bg-tertiary);
+}
+
+.dark-theme .tab-btn:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Dark theme transitions */
+.dark-theme * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}

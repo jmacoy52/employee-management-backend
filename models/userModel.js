@@ -37,6 +37,74 @@ static findUserByEmail(email) {
   });
   
 }
+
+  // Find user by ID
+  static findUserById(id, callback) {
+    const query = 'SELECT * FROM users WHERE id = ?';
+    db.query(query, [id], callback);
+  }
+
+  // Find user by ID (Promise version)
+  static findUserByIdAsync(id) {
+    return new Promise((resolve, reject) => {
+      const query = 'SELECT * FROM users WHERE id = ?';
+      db.query(query, [id], (err, results) => {
+        if (err) {
+          return reject(err);
+        }
+        if (results.length === 0) {
+          return resolve(null);
+        }
+        resolve(results[0]);
+      });
+    });
+  }
+
+  // Get user profile by ID
+  static getProfile(id, callback) {
+    const query = `
+      SELECT id, username, email, role, profile_picture, created_at 
+      FROM users 
+      WHERE id = ?
+    `;
+    db.query(query, [id], callback);
+  }
+
+  // Update user profile
+  static updateUserProfile(id, userData, callback) {
+    const fields = [];
+    const values = [];
+    
+    Object.keys(userData).forEach(key => {
+      fields.push(`${key} = ?`);
+      values.push(userData[key]);
+    });
+    
+    values.push(id);
+    const query = `UPDATE users SET ${fields.join(', ')} WHERE id = ?`;
+    db.query(query, values, callback);
+  }
+
+  // Update failed login attempts and lock status
+  static updateFailedAttempts(id, attempts, locked, callback) {
+    const query = 'UPDATE users SET failed_login_attempts = ?, account_locked = ? WHERE id = ?';
+    db.query(query, [attempts, locked, id], callback);
+  }
+
+  // Get all users with pagination
+  static getAllUsersPaginated(limit, offset, callback) {
+    const query = 'SELECT id, username, email, role, created_at FROM users ORDER BY id DESC LIMIT ? OFFSET ?';
+    db.query(query, [limit, offset], callback);
+  }
+
+  // Get total count of users
+  static getTotalUserCount(callback) {
+    const query = 'SELECT COUNT(*) as total FROM users';
+    db.query(query, (err, results) => {
+      if (err) return callback(err);
+      callback(null, results[0].total);
+    });
+  }
 }
 
 module.exports = UserModel;

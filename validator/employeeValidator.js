@@ -11,18 +11,24 @@ const employeeValidationSchema = {
     isLength: {
       options: { min: 3, max: 100 },
       errorMessage: 'Name must be between 3 and 100 characters',
-    }
+    },
+    trim: true,
+    escape: true
   },
 
   email: {
+    optional: true,
     isEmail: {
       errorMessage: 'Invalid email format',
     },
+    normalizeEmail: true,
     custom: {
       options: async (value) => {
-        const existingEmployee = await EmployeeModel.findEmployeeByEmail(value);
-        if (existingEmployee) {
-          throw new Error('Employee email already exists');
+        if (value) {
+          const existingEmployee = await EmployeeModel.findEmployeeByEmail(value);
+          if (existingEmployee) {
+            throw new Error('Employee email already exists');
+          }
         }
         return true;
       }
@@ -40,9 +46,45 @@ const employeeValidationSchema = {
   },
 
   salary: {
-    isFloat: {
-      options: { min: 0 },
-      errorMessage: 'Salary must be a positive number',
+    custom: {
+      options: (value) => {
+        const salaryNum = parseFloat(value);
+        if (!value || isNaN(salaryNum) || salaryNum <= 0) {
+          throw new Error('Please enter a valid salary amount');
+        }
+        if (salaryNum < 1000) {
+          throw new Error('Salary must be at least ₵1,000 per month');
+        }
+        return true;
+      }
+    }
+  },
+
+  start_date: {
+    optional: true,
+    isDate: {
+      errorMessage: 'Please enter a valid date'
+    },
+    custom: {
+      options: (value) => {
+        if (value) {
+          const date = new Date(value);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          
+          if (date > today) {
+            throw new Error('Start date cannot be in the future');
+          }
+          
+          // Check if date is not too old (e.g., more than 50 years)
+          const minDate = new Date();
+          minDate.setFullYear(minDate.getFullYear() - 50);
+          if (date < minDate) {
+            throw new Error('Start date is too far in the past');
+          }
+        }
+        return true;
+      }
     }
   }
 };

@@ -1,52 +1,40 @@
-const { checkSchema } = require("express-validator");
+const { checkSchema } = require('express-validator');
+const UserModel = require('../models/userModel');
 
-// Import  UserModel to perform DB checks like email uniqueness
-const UserModel = require("../models/userModel");
-
+// User base validation (without role)
 const userValidationSchema = {
-    username: {
-      notEmpty: {
-        errorMessage: 'Username is required',
-      },
-      isLength: {
-        options: { min: 3, max: 50 },
-        errorMessage: 'Username must be between 3 and 50 characters',
-      }
+  username: {
+    notEmpty: {
+      errorMessage: 'Username is required'
     },
-  
-    email: {
-      isEmail: {
-        errorMessage: 'Invalid email format',
-      },
-      // Custom validator to check if email already exists
-      custom: {
-        options: async (value) => {
-          const existingUser = await UserModel.findUserByEmail(value);
-          if (existingUser) {
-            throw new Error('Email already in use');
-          }
-          return true;
+    isLength: {
+      options: { min: 3, max: 50 },
+      errorMessage: 'Username must be between 3 and 50 characters'
+    }
+  },
+
+  email: {
+    isEmail: {
+      errorMessage: 'Invalid email format'
+    },
+    custom: {
+      options: async (value) => {
+        const existingUser = await UserModel.findUserByEmail(value);
+        if (existingUser) {
+          throw new Error('Email already in use');
         }
-      }
-    },
-  
-    password: {
-      isLength: {
-        options: { min: 8 },
-        errorMessage: 'Password must be at least 8 characters long',
-      }
-      
-    },
-  
-    role: {
-      optional: true, // Make it optional so users default to 'hr'
-      isIn: {
-        options: [['hr', 'admin']], // Only allow 'hr' or 'admin'
-        errorMessage: 'Invalid role. Must be either hr or admin',
+        return true;
       }
     }
-  };
-  
-  // Export schema wrapped in checkSchema
-  module.exports = checkSchema(userValidationSchema);
+  },
+
+  password: {
+    isLength: {
+      options: { min: 8 },
+      errorMessage: 'Password must be at least 8 characters long'
+    }
+  }
+};
+
+module.exports = checkSchema(userValidationSchema);
 
