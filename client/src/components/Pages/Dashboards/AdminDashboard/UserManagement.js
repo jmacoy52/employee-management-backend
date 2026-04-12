@@ -35,6 +35,16 @@ const UserManagement = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUser, setNewUser] = useState({
+    email: "",
+    role: "employee",
+    firstName: "",
+    lastName: "",
+    department: "",
+    position: ""
+  });
+  const [creatingUser, setCreatingUser] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -54,20 +64,59 @@ const UserManagement = () => {
         throw new Error("Authentication required");
       }
 
-      console.log("Fetching users...");
-
-      const response = await axios.get("http://localhost:5000/api/users/all", {
+      const response = await axios.get("http://localhost:5000/api/admin/users", {
         headers: { Authorization: `Bearer ${token}` }
       });
-
-      console.log("Users response:", response.data);
-      setUsers(Array.isArray(response.data) ? response.data : []);
-      setLoading(false);
-    } catch (err) {
-      console.error("Users fetch error:", err);
-      toast.error("Failed to fetch users: " + (err.response?.data?.error || err.message));
+      setUsers(response.data.users || []);
+    } catch (error) {
+      console.error("Error fetching users:", error);
+      toast.error("Failed to fetch users");
+    } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreateUser = async () => {
+    if (!newUser.email || !newUser.role) {
+      toast.error("Email and role are required");
+      return;
+    }
+
+    try {
+      setCreatingUser(true);
+      const token = localStorage.getItem("token");
+      
+      const response = await axios.post("http://localhost:5000/api/admin/users", newUser, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data.success) {
+        toast.success(`User created successfully! Temporary password: ${response.data.temporaryPassword}`);
+        setShowAddUserModal(false);
+        setNewUser({
+          email: "",
+          role: "employee",
+          firstName: "",
+          lastName: "",
+          department: "",
+          position: ""
+        });
+        fetchUsers(); // Refresh user list
+      }
+    } catch (error) {
+      console.error("Error creating user:", error);
+      toast.error(error.response?.data?.error || "Failed to create user");
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setNewUser(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   const filterUsers = () => {
@@ -289,7 +338,7 @@ const UserManagement = () => {
           {/* Controls */}
           <div className="user-controls">
             <div className="controls-left">
-              <button className="btn btn-primary">
+              <button className="btn btn-primary" onClick={() => setShowAddUserModal(true)}>
                 <Plus size={16} />
                 Add User
               </button>
@@ -428,6 +477,112 @@ const UserManagement = () => {
           </div>
         </main>
       </div>
+
+      {/* Add User Modal */}
+      {showAddUserModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h3>Add New User</h3>
+              <button 
+                className="modal-close" 
+                onClick={() => setShowAddUserModal(false)}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="modal-body">
+              <div className="form-group">
+                <label>Email *</label>
+                <input
+                  type="email"
+                  name="email"
+                  value={newUser.email}
+                  onChange={handleInputChange}
+                  placeholder="user@example.com"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Role *</label>
+                <select
+                  name="role"
+                  value={newUser.role}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="employee">Employee</option>
+                  <option value="hr">HR</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>First Name</label>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={newUser.firstName}
+                  onChange={handleInputChange}
+                  placeholder="John"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Last Name</label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={newUser.lastName}
+                  onChange={handleInputChange}
+                  placeholder="Doe"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Department</label>
+                <input
+                  type="text"
+                  name="department"
+                  value={newUser.department}
+                  onChange={handleInputChange}
+                  placeholder="Engineering"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>Position</label>
+                <input
+                  type="text"
+                  name="position"
+                  value={newUser.position}
+                  onChange={handleInputChange}
+                  placeholder="Software Developer"
+                />
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button 
+                className="btn btn-secondary" 
+                onClick={() => setShowAddUserModal(false)}
+                disabled={creatingUser}
+              >
+                Cancel
+              </button>
+              <button 
+                className="btn btn-primary" 
+                onClick={handleCreateUser}
+                disabled={creatingUser}
+              >
+                {creatingUser ? 'Creating...' : 'Create User'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

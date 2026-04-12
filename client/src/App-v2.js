@@ -16,6 +16,7 @@ import Contact from './components/Pages/Contact';
 // Admin pages
 import AdminLayout from './components/common/layout/AdminLayout';
 import AdminDashboard from './components/Pages/admin/Dashboard.js';
+import UserManagement from './components/Pages/Dashboards/AdminDashboard/UserManagement.js';
 
 // HR pages
 import HRLayout from './components/common/layout/HRLayout';
@@ -62,6 +63,35 @@ function App() {
                 <AdminDashboard />
               </AdminLayout>
             } />
+            <Route path="/admin/users" element={
+              <AdminLayout>
+                <UserManagement />
+              </AdminLayout>
+            } />
+            <Route path="/admin/auditlog" element={
+              <AdminLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">Audit Logs</h1>
+                  <p className="text-gray-600">Audit logs coming soon...</p>
+                </div>
+              </AdminLayout>
+            } />
+            <Route path="/admin/system" element={
+              <AdminLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">System Settings</h1>
+                  <p className="text-gray-600">System settings coming soon...</p>
+                </div>
+              </AdminLayout>
+            } />
+            <Route path="/admin/reports" element={
+              <AdminLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">System Reports</h1>
+                  <p className="text-gray-600">System reports coming soon...</p>
+                </div>
+              </AdminLayout>
+            } />
           </Route>
 
           {/* HR Routes - Protected */}
@@ -69,6 +99,46 @@ function App() {
             <Route path="/hr/dashboard" element={
               <HRLayout>
                 <HRDashboard />
+              </HRLayout>
+            } />
+            <Route path="/hr/employees" element={
+              <HRLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">Employees</h1>
+                  <p className="text-gray-600">Employee management coming soon...</p>
+                </div>
+              </HRLayout>
+            } />
+            <Route path="/hr/departments" element={
+              <HRLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">Departments</h1>
+                  <p className="text-gray-600">Department management coming soon...</p>
+                </div>
+              </HRLayout>
+            } />
+            <Route path="/hr/reports" element={
+              <HRLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">Reports</h1>
+                  <p className="text-gray-600">HR reports coming soon...</p>
+                </div>
+              </HRLayout>
+            } />
+            <Route path="/hr/profile" element={
+              <HRLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">My Profile</h1>
+                  <p className="text-gray-600">Profile management coming soon...</p>
+                </div>
+              </HRLayout>
+            } />
+            <Route path="/hr/notifications" element={
+              <HRLayout>
+                <div className="p-6">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-4">Notifications</h1>
+                  <p className="text-gray-600">Notifications coming soon...</p>
+                </div>
               </HRLayout>
             } />
           </Route>

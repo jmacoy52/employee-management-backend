@@ -1,16 +1,18 @@
 import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Users, Settings, FileText, BarChart3, Menu, X, Bell, Search } from 'lucide-react';
 
 const AdminLayout = ({ children }) => {
   const { user } = useAuth();
+  const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [notificationsOpen, setNotificationsOpen] = React.useState(false);
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/admin/dashboard' },
-    { id: 'users', label: 'User Management', icon: Users, path: '/admin/usermanagement' },
+    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/AdminDashboard' },
+    { id: 'users', label: 'User Management', icon: Users, path: '/admin/users' },
     { id: 'audit', label: 'Audit Logs', icon: FileText, path: '/admin/auditlog' },
     { id: 'settings', label: 'System Settings', icon: Settings, path: '/admin/system' },
     { id: 'reports', label: 'System Reports', icon: BarChart3, path: '/admin/reports' }
@@ -34,13 +36,17 @@ const AdminLayout = ({ children }) => {
           <ul className="space-y-2">
             {menuItems.map((item) => (
               <li key={item.id}>
-                <a
-                  href={item.path}
-                  className="flex items-center px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 hover:text-white rounded-md transition-colors"
+                <Link
+                  to={item.path}
+                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                    location.pathname === item.path
+                      ? 'bg-gray-700 text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
                 >
                   <item.icon size={20} className="mr-3" />
                   {item.label}
-                </a>
+                </Link>
               </li>
             ))}
           </ul>

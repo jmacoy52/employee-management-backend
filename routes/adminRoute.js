@@ -22,6 +22,9 @@ router.get('/users', authenticateToken, authorizeAdmin, AdminController.getAllUs
 // Get user by ID (Admin)
 router.get('/users/:id', authenticateToken, authorizeAdmin, AdminController.getUserById);
 
+// Create new user (Admin)
+router.post('/users', authenticateToken, authorizeAdmin, AdminController.createUser);
+
 // Update user role (Admin)
 router.put('/users/:id/role', authenticateToken, authorizeAdmin, roleValidator, handleValidation, AdminController.updateUserRole);
 

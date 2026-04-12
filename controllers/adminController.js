@@ -46,6 +46,98 @@ class AdminController {
     });
   }
 
+  // Create new user (Admin)
+  static async createUser(req, res) {
+    try {
+      const { email, role, firstName, lastName, department, position } = req.body;
+      
+      // Validate required fields
+      if (!email || !role) {
+        return res.status(400).json({ 
+          error: 'Email and role are required' 
+        });
+      }
+
+      // Check if user already exists
+      UserModel.findUserByEmail(email, async (err, existingUser) => {
+        if (err) {
+          console.error('Error checking existing user:', err);
+          return res.status(500).json({ error: 'Server error' });
+        }
+
+        if (existingUser) {
+          return res.status(400).json({ 
+            error: 'User with this email already exists' 
+          });
+        }
+
+        // Generate temporary password
+        const tempPassword = this.generateTempPassword();
+        const hashedPassword = await require('bcryptjs').hash(tempPassword, 12);
+
+        // Create new user
+        const userData = {
+          email,
+          password: hashedPassword,
+          role,
+          firstName: firstName || null,
+          lastName: lastName || null,
+          department: department || null,
+          position: position || null,
+          isTemporaryPassword: true,
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        UserModel.createUser(userData, (err, result) => {
+          if (err) {
+            console.error('Error creating user:', err);
+            return res.status(500).json({ error: 'Failed to create user' });
+          }
+
+          // Log the action
+          AuditLogService.log({
+            userId: req.user.id,
+            action: 'CREATE_USER',
+            details: `Created new user: ${email} with role: ${role}`,
+            ipAddress: req.ip
+          });
+
+          // Return user info with temporary password
+          const { password, ...userWithoutPassword } = userData;
+          res.status(201).json({
+            success: true,
+            message: 'User created successfully',
+            user: {
+              id: result.insertId,
+              email,
+              role,
+              firstName,
+              lastName,
+              department,
+              position,
+              isTemporaryPassword: true
+            },
+            temporaryPassword: tempPassword
+          });
+        });
+      });
+    } catch (error) {
+      console.error('Error in createUser:', error);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+
+  // Generate temporary password
+  static generateTempPassword() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  }
+
   // UPDATE an existing user role
   static updateUserRole(req, res) {
     const userId = req.params.id;

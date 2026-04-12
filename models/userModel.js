@@ -105,6 +105,29 @@ static findUserByEmail(email) {
       callback(null, results[0].total);
     });
   }
+
+  // Create new user (Admin)
+  static createUser(userData, callback) {
+    const query = `
+      INSERT INTO users (
+        email, password, role, firstName, lastName, department, position, 
+        isTemporaryPassword, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const values = [
+      userData.email,
+      userData.password,
+      userData.role,
+      userData.firstName,
+      userData.lastName,
+      userData.department,
+      userData.position,
+      userData.isTemporaryPassword || false,
+      userData.created_at,
+      userData.updated_at
+    ];
+    db.query(query, values, callback);
+  }
 }
 
 module.exports = UserModel;
