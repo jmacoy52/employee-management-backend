@@ -217,7 +217,6 @@ const SettingsPage = () => {
   };
 
   const exportData = () => {
-    // Mock export functionality
     const data = {
       user: {
         username: user?.username,
@@ -251,7 +250,7 @@ const SettingsPage = () => {
         <div className="header-content">
           <button 
             className="back-button"
-            onClick={() => navigate("/HRDashboard")}
+            onClick={() => navigate("/hr/dashboard")}
           >
             <ChevronLeft size={20} />
             <span>Back to Dashboard</span>
@@ -550,7 +549,7 @@ const SettingsPage = () => {
                   </div>
                   <select
                     value={preferences.language}
-                    onChange={(e) => handlePreferenceChange('language', null, e.target.value)}
+                    onChange={(e) => setPreferences((prev) => ({ ...prev, language: e.target.value }))}
                     className="language-select"
                   >
                     <option value="en">English</option>

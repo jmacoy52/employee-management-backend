@@ -21,26 +21,6 @@ export const authService = {
       return { success: false, error: message };
     }
   },
-
-  // Register user
-  register: async (userData) => {
-    try {
-      const response = await api.post('/api/users/register', userData);
-      const { token, user } = response.data;
-      
-      // Store securely
-      secureStorage.setToken(token, 24 * 60 * 60); // 24 hours
-      secureStorage.setUser(user);
-      
-      toast.success('Registration successful!');
-      return { success: true, data: { token, user } };
-    } catch (error) {
-      const message = error.response?.data?.error || 'Registration failed';
-      toast.error(message);
-      return { success: false, error: message };
-    }
-  },
-
   // Logout user
   logout: () => {
     secureStorage.clearAll();

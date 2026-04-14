@@ -3,7 +3,11 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
+const bcrypt = require('bcryptjs');
 const db = require('./config/db');
+const NotificationModel = require('./models/notificationModel');
+const { initializeSystemSchema } = require('./utils/systemSchema');
+const { generateOrganizationId } = require('./utils/tenant');
 const hrRoutes = require('./routes/hrRoute');
 const userRoutes = require('./routes/userRoute');
 const adminRoutes = require('./routes/adminRoute');
@@ -158,8 +162,9 @@ app.get('/api/system/status', (req, res) => {
     const isInitialized = userCount > 0;
     
     res.json({
-      isInitialized: isInitialized,
-      userCount: userCount,
+      isInitialized,
+      isFirstSetup: !isInitialized,
+      userCount,
       message: isInitialized 
         ? 'System is initialized' 
         : 'System needs initialization'
@@ -170,18 +175,24 @@ app.get('/api/system/status', (req, res) => {
 // System initialization endpoint
 app.post('/api/system/initialize', async (req, res) => {
   try {
-    const { superAdmin, admin, companyName } = req.body;
+    const { superAdmin, companyName } = req.body;
     
     // Validate input
-    if (!superAdmin || !admin || !companyName) {
+    if (!superAdmin || !companyName) {
       return res.status(400).json({
-        error: 'Missing required fields: superAdmin, admin, companyName'
+        error: 'Missing required fields: superAdmin, companyName'
+      });
+    }
+
+    if (!superAdmin.email || !superAdmin.password) {
+      return res.status(400).json({
+        error: 'Super admin email and password are required'
       });
     }
     
     // Check if system is already initialized
     const checkQuery = 'SELECT COUNT(*) as userCount FROM users';
-    db.query(checkQuery, (err, results) => {
+    db.query(checkQuery, async (err, results) => {
       if (err) {
         console.error('Error checking system status:', err);
         return res.status(500).json({ error: 'Failed to check system status' });
@@ -193,6 +204,10 @@ app.post('/api/system/initialize', async (req, res) => {
         });
       }
       
+      const hashedPassword = await bcrypt.hash(superAdmin.password, 10);
+      const username = superAdmin.username || superAdmin.email.split('@')[0];
+      const organization_id = generateOrganizationId();
+
       // Start transaction
       db.beginTransaction((err) => {
         if (err) {
@@ -202,47 +217,48 @@ app.post('/api/system/initialize', async (req, res) => {
         
         // Insert Super Admin
         const superAdminQuery = `
-          INSERT INTO users (email, password, role, created_at, updated_at) 
-          VALUES (?, ?, 'super_admin', NOW(), NOW())
+          INSERT INTO users (organization_id, username, email, password, role, created_at, updated_at) 
+          VALUES (?, ?, ?, ?, 'super_admin', NOW(), NOW())
         `;
         
-        db.query(superAdminQuery, [superAdmin.email, superAdmin.password], (err, result) => {
+        db.query(superAdminQuery, [organization_id, username, superAdmin.email, hashedPassword], (err, result) => {
           if (err) {
             return db.rollback(() => {
               console.error('Error creating super admin:', err);
               res.status(500).json({ error: 'Failed to create super admin account' });
             });
           }
-          
-          // Insert Admin
-          const adminQuery = `
-            INSERT INTO users (email, password, role, created_at, updated_at) 
-            VALUES (?, ?, 'admin', NOW(), NOW())
-          `;
-          
-          db.query(adminQuery, [admin.email, admin.password], (err, result) => {
+
+          // Commit transaction
+          db.commit((err) => {
             if (err) {
               return db.rollback(() => {
-                console.error('Error creating admin:', err);
-                res.status(500).json({ error: 'Failed to create admin account' });
+                console.error('Error committing transaction:', err);
+                res.status(500).json({ error: 'Failed to initialize system' });
               });
             }
             
-            // Commit transaction
-            db.commit((err) => {
-              if (err) {
-                return db.rollback(() => {
-                  console.error('Error committing transaction:', err);
-                  res.status(500).json({ error: 'Failed to initialize system' });
-                });
+            res.json({
+              success: true,
+              message: 'System initialized successfully',
+              companyName,
+              superAdmin: {
+                id: result.insertId,
+                organization_id,
+                username,
+                email: superAdmin.email,
+                role: 'super_admin'
               }
-              
-              res.json({
-                success: true,
-                message: 'System initialized successfully',
-                companyName: companyName
-              });
             });
+
+            NotificationModel.createSystemNotification({
+              organization_id: organization_id,
+              type: 'success',
+              title: 'Tenant initialized',
+              message: `${companyName} is ready. You can now create admin, HR, and employee accounts.`,
+              icon: 'Shield',
+              color: 'text-emerald-500'
+            }, () => {});
           });
         });
       });
@@ -261,6 +277,13 @@ app.get('/', (req, res) => {
 // Error handling middleware (must be last)
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`Server is running on ${PORT}`);
-});
+initializeSystemSchema()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Server is running on ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Failed to initialize system schema:', error);
+    process.exit(1);
+  });

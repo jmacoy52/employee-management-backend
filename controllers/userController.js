@@ -51,8 +51,9 @@ class UserController {
   // Get user profile
   static getProfile(req, res) {
     const userId = req.user.id;
+    const organizationId = req.user.organization_id;
 
-    UserModel.getProfile(userId, (err, results) => {
+    UserModel.getProfile(userId, organizationId, (err, results) => {
       if (err) {
         console.error('Error fetching user profile:', err);
         return res.status(500).json({ error: 'Failed to fetch profile' });
@@ -72,13 +73,14 @@ class UserController {
   // Update user profile
   static updateProfile(req, res) {
     const userId = req.user.id;
+    const organizationId = req.user.organization_id;
     const updates = req.body;
 
     // Prevent updating sensitive fields
     delete updates.role;
     delete updates.password;
 
-    UserModel.updateUserProfile(userId, updates, (err, result) => {
+    UserModel.updateUserProfile(userId, organizationId, updates, (err, result) => {
       if (err) {
         console.error('Error updating user profile:', err);
         return res.status(500).json({ error: 'Failed to update profile' });
@@ -114,7 +116,7 @@ class UserController {
 
     try {
       // Get user using async method
-      const user = await UserModel.findUserByIdAsync(userId);
+      const user = await UserModel.findUserByIdAsync(userId, req.user.organization_id);
       
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
@@ -132,7 +134,7 @@ class UserController {
 
       // Update password using Promise wrapper
       const updateResult = await new Promise((resolve, reject) => {
-        UserModel.updateUserProfile(userId, { password: hashedNewPassword }, (err, result) => {
+        UserModel.updateUserProfile(userId, req.user.organization_id, { password: hashedNewPassword }, (err, result) => {
           if (err) {
             return reject(err);
           }
@@ -173,7 +175,7 @@ class UserController {
       
       // Update user profile picture in database
       const updateResult = await new Promise((resolve, reject) => {
-        UserModel.updateUserProfile(userId, { profile_picture: profilePictureUrl }, (err, result) => {
+        UserModel.updateUserProfile(userId, req.user.organization_id, { profile_picture: profilePictureUrl }, (err, result) => {
           if (err) {
             console.error('Database update error:', err);
             return reject(err);
@@ -204,10 +206,11 @@ class UserController {
       const query = `
         SELECT id, username, email, role, created_at
         FROM users 
+        WHERE organization_id = ?
         ORDER BY created_at DESC
       `;
       
-      db.query(query, (err, results) => {
+      db.query(query, [req.user.organization_id], (err, results) => {
         if (err) {
           console.error('Error fetching users:', err);
           return res.status(500).json({ error: 'Failed to fetch users' });
@@ -233,9 +236,10 @@ class UserController {
           SUM(CASE WHEN role = 'employee' THEN 1 ELSE 0 END) as employeeUsers,
           SUM(CASE WHEN role = 'super_admin' THEN 1 ELSE 0 END) as superAdminUsers
         FROM users
+        WHERE organization_id = ?
       `;
       
-      db.query(query, (err, results) => {
+      db.query(query, [req.user.organization_id], (err, results) => {
         if (err) {
           console.error('Error fetching user stats:', err);
           return res.status(500).json({ error: 'Failed to fetch user statistics' });
@@ -268,8 +272,8 @@ class UserController {
       }
       
       // Don't allow deletion of super admins except by other super admins
-      const userQuery = 'SELECT role FROM users WHERE id = ?';
-      db.query(userQuery, [id], (err, results) => {
+      const userQuery = 'SELECT role FROM users WHERE id = ? AND organization_id = ?';
+      db.query(userQuery, [id, req.user.organization_id], (err, results) => {
         if (err) {
           console.error('Error checking user role:', err);
           return res.status(500).json({ error: 'Failed to check user' });
@@ -285,8 +289,8 @@ class UserController {
         }
         
         // Proceed with deletion
-        const deleteQuery = 'DELETE FROM users WHERE id = ?';
-        db.query(deleteQuery, [id], (err, result) => {
+        const deleteQuery = 'DELETE FROM users WHERE id = ? AND organization_id = ?';
+        db.query(deleteQuery, [id, req.user.organization_id], (err, result) => {
           if (err) {
             console.error('Error deleting user:', err);
             return res.status(500).json({ error: 'Failed to delete user' });
@@ -328,10 +332,10 @@ class UserController {
       const placeholders = userIds.map(() => '?').join(',');
       const checkQuery = `
         SELECT id, role FROM users 
-        WHERE id IN (${placeholders}) AND role = 'super_admin'
+        WHERE id IN (${placeholders}) AND role = 'super_admin' AND organization_id = ?
       `;
       
-      db.query(checkQuery, userIds, (err, results) => {
+      db.query(checkQuery, [...userIds, req.user.organization_id], (err, results) => {
         if (err) {
           console.error('Error checking super admin users:', err);
           return res.status(500).json({ error: 'Failed to check users' });
@@ -348,10 +352,10 @@ class UserController {
         const deletePlaceholders = filteredIds.map(() => '?').join(',');
         const deleteQuery = `
           DELETE FROM users 
-          WHERE id IN (${deletePlaceholders})
+          WHERE id IN (${deletePlaceholders}) AND organization_id = ?
         `;
         
-        db.query(deleteQuery, filteredIds, (err, result) => {
+        db.query(deleteQuery, [...filteredIds, req.user.organization_id], (err, result) => {
           if (err) {
             console.error('Error batch deleting users:', err);
             return res.status(500).json({ error: 'Failed to delete users' });

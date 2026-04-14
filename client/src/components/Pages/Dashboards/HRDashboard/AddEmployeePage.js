@@ -24,7 +24,7 @@ const AddEmployeePage = () => {
         <div className="header-content">
           <button
             className="back-button"
-            onClick={() => navigate("/HRDashboard")}
+            onClick={() => navigate("/hr/dashboard")}
           >
             <ArrowLeft size={20} />
             <span>Back to Dashboard</span>

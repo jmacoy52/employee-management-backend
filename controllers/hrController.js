@@ -1,5 +1,6 @@
 const Employee = require('../models/employeeModel');
 const AuditLogModel = require('../models/auditLogModel');
+const NotificationModel = require('../models/notificationModel');
 
 class HrController {
   // Get all employees
@@ -7,14 +8,15 @@ class HrController {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
+    const organizationId = req.user.organization_id;
 
-    Employee.getAllEmployeesPaginated(limit, offset, (err, data) => {
+    Employee.getAllEmployeesPaginated(organizationId, limit, offset, (err, data) => {
       if (err) {
         console.error('Error fetching employees:', err);
         return res.status(500).json({ error: 'Failed to fetch employees' });
       }
 
-      Employee.getTotalCount((countErr, total) => {
+      Employee.getTotalCount(organizationId, (countErr, total) => {
         if (countErr) {
           console.error('Error fetching count:', countErr);
           return res.status(500).json({ error: 'Failed to fetch employees' });
@@ -48,6 +50,7 @@ class HrController {
     }
 
     const newEmployee = { 
+      organization_id: req.user.organization_id,
       FullName, 
       position, 
       Department, 
@@ -63,14 +66,24 @@ class HrController {
 
       // Log this action
       AuditLogModel.insertLog({
+        organizationId: req.user.organization_id,
         userId: req.user.id,
-        actions: 'CREATE_EMPLOYEE',
-        descriptions: `Employee ${FullName} created by ${req.user.email}`
+        action: 'CREATE_EMPLOYEE',
+        description: `Employee ${FullName} created by ${req.user.email}`
       }, (logErr) => {
         if (logErr) console.error('Failed to insert audit log:', logErr);
       });
 
       res.status(201).json({ message: 'Employee created successfully', id: result.insertId });
+
+      NotificationModel.createSystemNotification({
+        organization_id: req.user.organization_id,
+        type: 'success',
+        title: 'Employee created',
+        message: `${FullName} was added to the employee directory.`,
+        icon: 'CheckCircle',
+        color: 'text-emerald-500'
+      }, () => {});
     });
   }
 
@@ -84,7 +97,7 @@ class HrController {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const updatedData = { FullName, position, Department, salary };
+    const updatedData = { organization_id: req.user.organization_id, FullName, position, Department, salary };
     console.log('Updating employee with data:', updatedData);
 
     Employee.updateEmployee(employeeId, updatedData, (err, result) => {
@@ -102,11 +115,21 @@ class HrController {
       console.log('Employee updated successfully, sending response');
       res.status(200).json({ message: 'Employee updated successfully' });
 
+      NotificationModel.createSystemNotification({
+        organization_id: req.user.organization_id,
+        type: 'info',
+        title: 'Employee updated',
+        message: `${FullName} was updated by ${req.user.username || req.user.email}.`,
+        icon: 'Bell',
+        color: 'text-sky-500'
+      }, () => {});
+
       // Log this action asynchronously (don't wait for it)
       AuditLogModel.insertLog({
+        organizationId: req.user.organization_id,
         userId: req.user.id,
-        actions: 'UPDATE_EMPLOYEE',
-        descriptions: `Employee ${employeeId} updated by ${req.user.email}`
+        action: 'UPDATE_EMPLOYEE',
+        description: `Employee ${employeeId} updated by ${req.user.email}`
       }, (logErr) => {
         if (logErr) console.error('Failed to insert audit log:', logErr);
       });
@@ -117,7 +140,7 @@ class HrController {
   static deleteEmployee(req, res) {
     const employeeId = req.params.id;
 
-    Employee.deleteEmployee(employeeId, (err, result) => {
+    Employee.deleteEmployee(employeeId, req.user.organization_id, (err, result) => {
       if (err) {
         console.error('Error deleting employee:', err);
         return res.status(500).json({ error: 'Failed to delete employee' });
@@ -129,14 +152,24 @@ class HrController {
 
       // Log this action
       AuditLogModel.insertLog({
+        organizationId: req.user.organization_id,
         userId: req.user.id,
-        actions: 'DELETE_EMPLOYEE',
-        descriptions: `Employee ${employeeId} deleted by ${req.user.email}`
+        action: 'DELETE_EMPLOYEE',
+        description: `Employee ${employeeId} deleted by ${req.user.email}`
       }, (logErr) => {
         if (logErr) console.error('Failed to insert audit log:', logErr);
       });
 
       res.status(200).json({ message: 'Employee deleted successfully' });
+
+      NotificationModel.createSystemNotification({
+        organization_id: req.user.organization_id,
+        type: 'warning',
+        title: 'Employee deleted',
+        message: `Employee record ${employeeId} was removed from the tenant directory.`,
+        icon: 'AlertCircle',
+        color: 'text-amber-500'
+      }, () => {});
     });
   }
 
@@ -144,7 +177,7 @@ class HrController {
   static getEmployeeById(req, res) {
     const employeeId = req.params.id;
 
-    Employee.getEmployeeById(employeeId, (err, employee) => {
+    Employee.getEmployeeById(employeeId, req.user.organization_id, (err, employee) => {
       if (err) {
         console.error('Error fetching employee:', err);
         return res.status(500).json({ error: 'Failed to fetch employee' });

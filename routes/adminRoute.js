@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const AdminController = require('../controllers/adminController');
-const { authenticateToken, authorizeAdmin } = require('../middleware/authMiddleware');
+const { authenticateToken, authorizeAdmin, authorizeSuperAdmin } = require('../middleware/authMiddleware');
 const { checkSchema } = require('express-validator');
 const roleValidationSchema = require('../validator/roleValidator');
 const roleValidator = checkSchema(roleValidationSchema);
@@ -22,14 +22,14 @@ router.get('/users', authenticateToken, authorizeAdmin, AdminController.getAllUs
 // Get user by ID (Admin)
 router.get('/users/:id', authenticateToken, authorizeAdmin, AdminController.getUserById);
 
-// Create new user (Admin)
-router.post('/users', authenticateToken, authorizeAdmin, AdminController.createUser);
+// Create new user (Super Admin only)
+router.post('/users', authenticateToken, authorizeSuperAdmin, AdminController.createUser);
 
-// Update user role (Admin)
-router.put('/users/:id/role', authenticateToken, authorizeAdmin, roleValidator, handleValidation, AdminController.updateUserRole);
+// Update user role (Super Admin only)
+router.put('/users/:id/role', authenticateToken, authorizeSuperAdmin, roleValidator, handleValidation, AdminController.updateUserRole);
 
-// Delete user (Admin)
-router.delete('/users/:id', authenticateToken, authorizeAdmin, AdminController.deleteUser);
+// Delete user (Super Admin only)
+router.delete('/users/:id', authenticateToken, authorizeSuperAdmin, AdminController.deleteUser);
 
 // Route to get all audit logs (Admin)
 router.get('/audit-logs', authenticateToken, authorizeAdmin, AdminController.getAllAuditLogs);

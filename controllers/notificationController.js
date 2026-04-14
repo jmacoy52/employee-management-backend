@@ -4,8 +4,9 @@ class NotificationController {
   // Get all notifications for a user
   static getNotifications(req, res) {
     const userId = req.user.id;
+    const organizationId = req.user.organization_id;
     
-    NotificationModel.getNotificationsByUserId(userId, (err, notifications) => {
+    NotificationModel.getNotificationsByUserId(organizationId, userId, (err, notifications) => {
       if (err) {
         console.error('Error fetching notifications:', err);
         // Don't return error for empty result - it's normal
@@ -25,7 +26,7 @@ class NotificationController {
           message: notification.message,
           time: timeAgo,
           read: notification.read,
-          icon: this.getIconComponent(notification.icon),
+          icon: notification.icon || 'Bell',
           color: notification.color
         };
       });
@@ -37,8 +38,9 @@ class NotificationController {
   // Mark notification as read
   static markAsRead(req, res) {
     const notificationId = req.params.id;
+    const organizationId = req.user.organization_id;
     
-    NotificationModel.markAsRead(notificationId, (err, result) => {
+    NotificationModel.markAsRead(organizationId, notificationId, (err, result) => {
       if (err) {
         console.error('Error marking notification as read:', err);
         return res.status(500).json({ error: 'Failed to mark notification as read' });
@@ -55,8 +57,9 @@ class NotificationController {
   // Mark all notifications as read
   static markAllAsRead(req, res) {
     const userId = req.user.id;
+    const organizationId = req.user.organization_id;
     
-    NotificationModel.markAllAsRead(userId, (err, result) => {
+    NotificationModel.markAllAsRead(organizationId, userId, (err, result) => {
       if (err) {
         console.error('Error marking all notifications as read:', err);
         return res.status(500).json({ error: 'Failed to mark all notifications as read' });
@@ -69,8 +72,9 @@ class NotificationController {
   // Delete notification
   static deleteNotification(req, res) {
     const notificationId = req.params.id;
+    const organizationId = req.user.organization_id;
     
-    NotificationModel.deleteNotification(notificationId, (err, result) => {
+    NotificationModel.deleteNotification(organizationId, notificationId, (err, result) => {
       if (err) {
         console.error('Error deleting notification:', err);
         return res.status(500).json({ error: 'Failed to delete notification' });
@@ -87,8 +91,9 @@ class NotificationController {
   // Clear all notifications
   static clearAllNotifications(req, res) {
     const userId = req.user.id;
+    const organizationId = req.user.organization_id;
     
-    NotificationModel.clearAllNotifications(userId, (err, result) => {
+    NotificationModel.clearAllNotifications(organizationId, userId, (err, result) => {
       if (err) {
         console.error('Error clearing notifications:', err);
         return res.status(500).json({ error: 'Failed to clear notifications' });
@@ -103,7 +108,7 @@ class NotificationController {
     try {
       const userId = req.user.id;
       
-      NotificationModel.getUnreadCount(userId, (err, results) => {
+      NotificationModel.getUnreadCount(req.user.organization_id, userId, (err, results) => {
         if (err) {
           console.error('Error fetching unread count:', err);
           // Don't return error for empty result - it's normal
@@ -173,6 +178,7 @@ class NotificationController {
     }
 
     const notificationData = {
+      organization_id: req.user.organization_id,
       type,
       title,
       message,

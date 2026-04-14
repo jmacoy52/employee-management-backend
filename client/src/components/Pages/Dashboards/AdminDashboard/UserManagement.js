@@ -1,41 +1,37 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "react-hot-toast";
-import { 
-  Users, 
-  Building, 
-  Settings, 
-  FileText, 
-  BarChart3, 
-  Search,
-  Bell,
-  User,
-  LogOut,
-  Menu,
-  X,
-  Plus,
-  Edit,
-  Trash2,
+import {
+  Eye,
   Filter,
-  Download,
+  Mail,
+  Plus,
   RefreshCw,
   Shield,
+  Trash2,
   UserCheck,
-  Briefcase,
-  Eye
+  Users
 } from "lucide-react";
-import "./AdminDashboard.css";
+import { adminAPI } from "../../../../services/apiService";
+import { useAuth } from "../../../../contexts/AuthContext";
+import "./UserManagement.css";
+
+const roleLabels = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  hr: "HR",
+  employee: "Employee"
+};
 
 const UserManagement = () => {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const [users, setUsers] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
-  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createdCredentials, setCreatedCredentials] = useState(null);
+  const [creatingUser, setCreatingUser] = useState(false);
   const [newUser, setNewUser] = useState({
     email: "",
     role: "employee",
@@ -44,540 +40,338 @@ const UserManagement = () => {
     department: "",
     position: ""
   });
-  const [creatingUser, setCreatingUser] = useState(false);
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  useEffect(() => {
-    filterUsers();
-  }, [users, searchTerm, roleFilter]);
-
-  const fetchUsers = async () => {
+  const loadUsers = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem("token");
-      
-      if (!token) {
-        throw new Error("Authentication required");
-      }
-
-      const response = await axios.get("http://localhost:5000/api/admin/users", {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await adminAPI.getUsers();
       setUsers(response.data.users || []);
     } catch (error) {
-      console.error("Error fetching users:", error);
-      toast.error("Failed to fetch users");
+      console.error("Failed to fetch users:", error);
+      toast.error(error.response?.data?.error || "Failed to fetch tenant users.");
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const filteredUsers = useMemo(() => {
+    return users.filter((entry) => {
+      const matchesSearch =
+        !searchTerm ||
+        (entry.username || entry.email.split("@")[0]).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        entry.email.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesRole = roleFilter === "all" || entry.role === roleFilter;
+      return matchesSearch && matchesRole;
+    });
+  }, [users, searchTerm, roleFilter]);
+
+  const summary = useMemo(() => ({
+    total: users.length,
+    admins: users.filter((entry) => entry.role === "admin").length,
+    hr: users.filter((entry) => entry.role === "hr").length,
+    employees: users.filter((entry) => entry.role === "employee").length
+  }), [users]);
+
   const handleCreateUser = async () => {
     if (!newUser.email || !newUser.role) {
-      toast.error("Email and role are required");
+      toast.error("Email and role are required.");
       return;
     }
 
     try {
       setCreatingUser(true);
-      const token = localStorage.getItem("token");
-      
-      const response = await axios.post("http://localhost:5000/api/admin/users", newUser, {
-        headers: { Authorization: `Bearer ${token}` }
+      const response = await adminAPI.createUser(newUser);
+      setCreatedCredentials({
+        email: response.data.user.email,
+        username: response.data.user.username,
+        temporaryPassword: response.data.temporaryPassword
       });
-      
-      if (response.data.success) {
-        toast.success(`User created successfully! Temporary password: ${response.data.temporaryPassword}`);
-        setShowAddUserModal(false);
-        setNewUser({
-          email: "",
-          role: "employee",
-          firstName: "",
-          lastName: "",
-          department: "",
-          position: ""
-        });
-        fetchUsers(); // Refresh user list
-      }
+      setShowCreateModal(false);
+      setNewUser({
+        email: "",
+        role: "employee",
+        firstName: "",
+        lastName: "",
+        department: "",
+        position: ""
+      });
+      toast.success("User created successfully.");
+      await loadUsers();
     } catch (error) {
-      console.error("Error creating user:", error);
-      toast.error(error.response?.data?.error || "Failed to create user");
+      console.error("Failed to create user:", error);
+      toast.error(error.response?.data?.error || "Failed to create user.");
     } finally {
       setCreatingUser(false);
     }
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setNewUser(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
-
-  const filterUsers = () => {
-    let filtered = users;
-
-    if (searchTerm) {
-      filtered = filtered.filter(user => 
-        user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        user.email.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+  const handleDeleteUser = async (selectedUser) => {
+    if (!window.confirm(`Delete ${selectedUser.username || selectedUser.email}?`)) {
+      return;
     }
 
-    if (roleFilter !== "all") {
-      filtered = filtered.filter(user => user.role === roleFilter);
-    }
-
-    setFilteredUsers(filtered);
-  };
-
-  const handleDeleteUser = async (userId, username) => {
-    if (window.confirm(`Are you sure you want to delete user "${username}"? This action cannot be undone.`)) {
-      try {
-        const token = localStorage.getItem("token");
-        await axios.delete(`http://localhost:5000/api/users/${userId}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        toast.success(`User "${username}" deleted successfully`);
-        fetchUsers(); // Refresh the user list
-      } catch (err) {
-        console.error("Delete user error:", err);
-        toast.error("Failed to delete user: " + (err.response?.data?.error || err.message));
-      }
+    try {
+      await adminAPI.deleteUser(selectedUser.id);
+      toast.success("User deleted successfully.");
+      await loadUsers();
+    } catch (error) {
+      console.error("Failed to delete user:", error);
+      toast.error(error.response?.data?.error || "Failed to delete user.");
     }
   };
 
-  const handleEditUser = (user) => {
-    // TODO: Implement edit user functionality
-    toast.info(`Edit functionality for "${user.username}" coming soon!`);
-  };
+  const handleRoleCycle = async (selectedUser) => {
+    const roleOrder = ["employee", "hr", "admin"];
+    const nextRole = roleOrder[(roleOrder.indexOf(selectedUser.role) + 1) % roleOrder.length];
 
-  const handleViewUser = (user) => {
-    // TODO: Implement view user details
-    toast.info(`View details for "${user.username}" coming soon!`);
-  };
-
-  const handleChangeRole = async (userId, currentRole, username) => {
-    const roleOptions = ['super_admin', 'admin', 'hr', 'employee'];
-    const currentRoleIndex = roleOptions.indexOf(currentRole);
-    const nextRoleIndex = (currentRoleIndex + 1) % roleOptions.length;
-    const newRole = roleOptions[nextRoleIndex];
-    
-    if (window.confirm(`Change role for "${username}" from "${currentRole.replace('_', ' ')}" to "${newRole.replace('_', ' ')}"?`)) {
-      try {
-        const token = localStorage.getItem("token");
-        await axios.put(`http://localhost:5000/api/admin/users/${userId}/role`, 
-          { role: newRole },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        
-        toast.success(`Role for "${username}" changed to "${newRole.replace('_', ' ').toUpperCase()}"`);
-        fetchUsers(); // Refresh the user list
-      } catch (err) {
-        console.error("Role change error:", err);
-        toast.error("Failed to change role: " + (err.response?.data?.error || err.message));
-      }
+    try {
+      await adminAPI.updateUserRole(selectedUser.id, { role: nextRole });
+      toast.success(`Role updated to ${roleLabels[nextRole]}.`);
+      await loadUsers();
+    } catch (error) {
+      console.error("Failed to update role:", error);
+      toast.error(error.response?.data?.error || "Failed to update role.");
     }
   };
-
-  const handleLogout = () => {
-    localStorage.clear();
-    navigate("/login");
-  };
-
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: BarChart3, active: false },
-    { id: 'usermanagement', label: 'User Management', icon: Settings, active: true },
-    { id: 'auditlogs', label: 'Audit Logs', icon: FileText, active: false },
-    { id: 'system', label: 'System Settings', icon: Settings, active: false },
-    { id: 'reports', label: 'System Reports', icon: BarChart3, active: false }
-  ];
-
-  const getRoleIcon = (role) => {
-    switch(role) {
-      case 'super_admin': return <Shield size={16} />;
-      case 'admin': return <Shield size={16} />;
-      case 'hr': return <UserCheck size={16} />;
-      case 'employee': return <Briefcase size={16} />;
-      default: return <User size={16} />;
-    }
-  };
-
-  const getRoleColor = (role) => {
-    switch(role) {
-      case 'super_admin': return '#ef4444';
-      case 'admin': return '#3b82f6';
-      case 'hr': return '#10b981';
-      case 'employee': return '#f59e0b';
-      default: return '#6b7280';
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="admin-dashboard-loading">
-        <div className="loading-spinner"></div>
-        <p>Loading user management...</p>
-      </div>
-    );
-  }
 
   return (
-    <div className="admin-dashboard">
-      {/* Sidebar */}
-      <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`}>
-        <div className="sidebar-header">
-          <div className="logo">
-            <div className="logo-icon">
-              <Briefcase size={24} />
-            </div>
-            <span className="logo-text">EmploCore Admin</span>
+    <div className="tenant-users">
+      <section className="tenant-users-hero">
+        <div>
+          <p className="tenant-users-kicker">Tenant user management</p>
+          <h2>Provision and govern access without self-registration.</h2>
+          <p>
+            Accounts in this workspace are scoped to your tenant. Super admins can create users,
+            rotate roles, and hand over temporary credentials for first login.
+          </p>
+        </div>
+        {isSuperAdmin && (
+          <button type="button" className="primary-cta" onClick={() => setShowCreateModal(true)}>
+            <Plus size={18} />
+            Add user
+          </button>
+        )}
+      </section>
+
+      <section className="user-summary-grid">
+        <article className="summary-card">
+          <Users size={18} />
+          <div>
+            <span>Total users</span>
+            <strong>{summary.total}</strong>
           </div>
-          <button 
-            className="sidebar-toggle"
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-          >
-            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        </article>
+        <article className="summary-card">
+          <Shield size={18} />
+          <div>
+            <span>Admins</span>
+            <strong>{summary.admins}</strong>
+          </div>
+        </article>
+        <article className="summary-card">
+          <UserCheck size={18} />
+          <div>
+            <span>HR</span>
+            <strong>{summary.hr}</strong>
+          </div>
+        </article>
+        <article className="summary-card">
+          <Mail size={18} />
+          <div>
+            <span>Employees</span>
+            <strong>{summary.employees}</strong>
+          </div>
+        </article>
+      </section>
+
+      {createdCredentials && (
+        <section className="credentials-banner">
+          <div>
+            <h3>Temporary credentials generated</h3>
+            <p>Share these once, then ask the user to change password after login.</p>
+          </div>
+          <div className="credentials-grid">
+            <span>Email: {createdCredentials.email}</span>
+            <span>Username: {createdCredentials.username}</span>
+            <span>Password: {createdCredentials.temporaryPassword}</span>
+          </div>
+        </section>
+      )}
+
+      <section className="user-toolbar">
+        <div className="toolbar-search">
+          <input
+            type="text"
+            placeholder="Search by email or username"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+        <div className="toolbar-actions">
+          <label className="role-filter">
+            <Filter size={16} />
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+              <option value="all">All roles</option>
+              <option value="super_admin">Super Admin</option>
+              <option value="admin">Admin</option>
+              <option value="hr">HR</option>
+              <option value="employee">Employee</option>
+            </select>
+          </label>
+          <button type="button" className="secondary-cta" onClick={loadUsers}>
+            <RefreshCw size={16} />
+            Refresh
           </button>
         </div>
+      </section>
 
-        <nav className="sidebar-nav">
-          <ul className="nav-list">
-            {menuItems.map((item) => (
-              <li key={item.id}>
-                <button 
-                  className={`nav-item ${item.active ? 'active' : ''}`}
-                  onClick={() => {
-                    if (item.id === 'dashboard') navigate('/AdminDashboard');
-                    else if (item.id === 'auditlogs') navigate('/admin/auditlog');
-                  }}
-                >
-                  <item.icon size={20} className="nav-icon" />
-                  <span className="nav-label">{item.label}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="sidebar-footer">
-          <button className="logout-btn" onClick={handleLogout}>
-            <LogOut size={20} className="logout-icon" />
-            <span>Logout</span>
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <div className={`main-content ${sidebarOpen ? 'with-sidebar' : 'full-width'}`}>
-        {/* Top Bar */}
-        <header className="top-bar">
-          <div className="page-title-section">
-            <h1 className="page-title">User Management</h1>
+      <section className="user-table-shell">
+        {loading ? (
+          <div className="empty-state">Loading tenant users...</div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="empty-state">No users match the current filter.</div>
+        ) : (
+          <div className="user-table-wrap">
+            <table className="user-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Created</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>
+                      <div className="user-cell">
+                        <div className="user-avatar-chip">
+                          {(entry.username || entry.email.charAt(0)).charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <strong>{entry.username || entry.email.split("@")[0]}</strong>
+                          <span>Tenant-scoped account</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>{entry.email}</td>
+                    <td>
+                      <span className={`role-pill role-${entry.role}`}>
+                        {roleLabels[entry.role] || entry.role}
+                      </span>
+                    </td>
+                    <td>{new Date(entry.created_at).toLocaleDateString()}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button type="button" className="row-btn" onClick={() => toast(`User ID: ${entry.id}`)}>
+                          <Eye size={15} />
+                        </button>
+                        {isSuperAdmin && entry.role !== "super_admin" && (
+                          <>
+                            <button type="button" className="row-btn" onClick={() => handleRoleCycle(entry)}>
+                              <Shield size={15} />
+                            </button>
+                            <button type="button" className="row-btn danger" onClick={() => handleDeleteUser(entry)}>
+                              <Trash2 size={15} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+      </section>
 
-          <div className="top-bar-right">
-            <div className="search-bar">
-              <Search size={18} className="search-icon" />
-              <input 
-                type="text" 
-                placeholder="Search users..." 
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-
-            <button className="notification-btn">
-              <Bell size={20} />
-              <span className="notification-dot"></span>
-            </button>
-
-            <div className="user-dropdown">
-              <button 
-                className="user-profile-btn"
-                onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-              >
-                <div className="user-avatar">
-                  <User size={20} />
-                </div>
-                <div className="user-info">
-                  <span className="user-name">{localStorage.getItem('username') || 'Admin'}</span>
-                  <span className="user-role">Administrator</span>
-                </div>
-              </button>
-
-              {userDropdownOpen && (
-                <div className="dropdown-menu">
-                  <div className="dropdown-header">
-                    <div className="dropdown-avatar">
-                      <User size={24} />
-                    </div>
-                    <div className="dropdown-info">
-                      <span className="dropdown-name">{localStorage.getItem('username') || 'Admin'}</span>
-                      <span className="dropdown-role">Administrator</span>
-                    </div>
-                  </div>
-                  <button className="dropdown-item" onClick={handleLogout}>
-                    <LogOut size={16} />
-                    <span>Logout</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
-
-        {/* User Management Content */}
-        <main className="dashboard-content">
-          {/* Controls */}
-          <div className="user-controls">
-            <div className="controls-left">
-              <button className="btn btn-primary" onClick={() => setShowAddUserModal(true)}>
-                <Plus size={16} />
-                Add User
-              </button>
-              <div className="filter-dropdown">
-                <Filter size={16} />
-                <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-                  <option value="all">All Roles</option>
-                  <option value="super_admin">Super Admin</option>
-                  <option value="admin">Admin</option>
-                  <option value="hr">HR</option>
-                  <option value="employee">Employee</option>
-                </select>
+      {isSuperAdmin && showCreateModal && (
+        <div className="user-modal-backdrop" onClick={() => setShowCreateModal(false)}>
+          <div className="user-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="user-modal-header">
+              <div>
+                <h3>Create tenant user</h3>
+                <p>New users automatically inherit the current tenant boundary.</p>
               </div>
-            </div>
-            
-            <div className="controls-right">
-              <button className="btn btn-secondary" onClick={fetchUsers}>
-                <RefreshCw size={16} />
-                Refresh
-              </button>
-              <button className="btn btn-secondary">
-                <Download size={16} />
-                Export
+              <button type="button" className="secondary-cta" onClick={() => setShowCreateModal(false)}>
+                Close
               </button>
             </div>
-          </div>
 
-          {/* Users Table */}
-          <div className="users-table-container">
-            <div className="table-header">
-              <h3>All Users</h3>
-              <p>{filteredUsers.length} users found</p>
-            </div>
-
-            {filteredUsers.length === 0 ? (
-              <div className="no-users-state">
-                <div className="no-users-icon">
-                  <Users size={48} />
-                </div>
-                <h4>No Users Found</h4>
-                <p>
-                  {searchTerm || roleFilter !== "all" 
-                    ? "Try adjusting your search or filter criteria"
-                    : "No users have been added to the system yet"}
-                </p>
-                {!searchTerm && roleFilter === "all" && (
-                  <button className="btn btn-primary">
-                    <Plus size={16} />
-                    Add First User
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="users-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>User</th>
-                      <th>Email</th>
-                      <th>Role</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.map((user) => (
-                      <tr key={user.id}>
-                        <td>
-                          <div className="user-cell">
-                            <div className="user-avatar-small">
-                              {user.username.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="user-details">
-                              <div className="user-name">{user.username}</div>
-                              <div className="user-id">ID: {user.id}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="email-cell">
-                            <span className="email-text">{user.email}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="role-badge-custom" style={{ color: getRoleColor(user.role) }}>
-                            {getRoleIcon(user.role)}
-                            <span>{user.role.replace('_', ' ').toUpperCase()}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <span className="status-badge active">
-                            <div className="status-dot"></div>
-                            Active
-                          </span>
-                        </td>
-                        <td>
-                          <div className="action-buttons">
-                            <button 
-                              className="action-btn view" 
-                              title="View User Details"
-                              onClick={() => handleViewUser(user)}
-                            >
-                              <Eye size={14} />
-                            </button>
-                            <button 
-                              className="action-btn role" 
-                              title="Change User Role"
-                              onClick={() => handleChangeRole(user.id, user.role, user.username)}
-                              disabled={user.role === 'super_admin' && localStorage.getItem('username') !== user.username}
-                            >
-                              <Shield size={14} />
-                            </button>
-                            <button 
-                              className="action-btn edit" 
-                              title="Edit User"
-                              onClick={() => handleEditUser(user)}
-                            >
-                              <Edit size={14} />
-                            </button>
-                            <button 
-                              className="action-btn delete" 
-                              title="Delete User"
-                              onClick={() => handleDeleteUser(user.id, user.username)}
-                              disabled={user.role === 'super_admin'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </main>
-      </div>
-
-      {/* Add User Modal */}
-      {showAddUserModal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <div className="modal-header">
-              <h3>Add New User</h3>
-              <button 
-                className="modal-close" 
-                onClick={() => setShowAddUserModal(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="modal-body">
-              <div className="form-group">
-                <label>Email *</label>
+            <div className="user-form-grid">
+              <label>
+                Email
                 <input
                   type="email"
                   name="email"
                   value={newUser.email}
-                  onChange={handleInputChange}
-                  placeholder="user@example.com"
-                  required
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, email: e.target.value }))}
                 />
-              </div>
-
-              <div className="form-group">
-                <label>Role *</label>
+              </label>
+              <label>
+                Role
                 <select
                   name="role"
                   value={newUser.role}
-                  onChange={handleInputChange}
-                  required
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, role: e.target.value }))}
                 >
                   <option value="employee">Employee</option>
                   <option value="hr">HR</option>
                   <option value="admin">Admin</option>
                 </select>
-              </div>
-
-              <div className="form-group">
-                <label>First Name</label>
+              </label>
+              <label>
+                First name
                 <input
                   type="text"
                   name="firstName"
                   value={newUser.firstName}
-                  onChange={handleInputChange}
-                  placeholder="John"
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, firstName: e.target.value }))}
                 />
-              </div>
-
-              <div className="form-group">
-                <label>Last Name</label>
+              </label>
+              <label>
+                Last name
                 <input
                   type="text"
                   name="lastName"
                   value={newUser.lastName}
-                  onChange={handleInputChange}
-                  placeholder="Doe"
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, lastName: e.target.value }))}
                 />
-              </div>
-
-              <div className="form-group">
-                <label>Department</label>
+              </label>
+              <label>
+                Department
                 <input
                   type="text"
                   name="department"
                   value={newUser.department}
-                  onChange={handleInputChange}
-                  placeholder="Engineering"
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, department: e.target.value }))}
                 />
-              </div>
-
-              <div className="form-group">
-                <label>Position</label>
+              </label>
+              <label>
+                Position
                 <input
                   type="text"
                   name="position"
                   value={newUser.position}
-                  onChange={handleInputChange}
-                  placeholder="Software Developer"
+                  onChange={(e) => setNewUser((prev) => ({ ...prev, position: e.target.value }))}
                 />
-              </div>
+              </label>
             </div>
 
-            <div className="modal-footer">
-              <button 
-                className="btn btn-secondary" 
-                onClick={() => setShowAddUserModal(false)}
-                disabled={creatingUser}
-              >
+            <div className="user-modal-footer">
+              <button type="button" className="secondary-cta" onClick={() => setShowCreateModal(false)}>
                 Cancel
               </button>
-              <button 
-                className="btn btn-primary" 
-                onClick={handleCreateUser}
-                disabled={creatingUser}
-              >
-                {creatingUser ? 'Creating...' : 'Create User'}
+              <button type="button" className="primary-cta" disabled={creatingUser} onClick={handleCreateUser}>
+                {creatingUser ? "Creating..." : "Create user"}
               </button>
             </div>
           </div>

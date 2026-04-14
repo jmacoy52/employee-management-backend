@@ -8,15 +8,16 @@ class AuditLogService {
 
     queueMicrotask(async () => {
       try {
-        const { userId, entityId, beforeValue, afterValue } = options;
+        const { userId, organizationId, entityId, beforeValue, afterValue } = options;
         const ip = req ? (req.ip || req.connection.remoteAddress || req.socket.remoteAddress) : null;
         const userAgent = req ? req.get('User-Agent') : null;
 
         const query = `
-          INSERT INTO audit_logs (user_id, action, description, entity_id, before_value, after_value, ip_address, user_agent)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO audit_logs (organization_id, user_id, action, description, entity_id, before_value, after_value, ip_address, user_agent)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const values = [
+          organizationId || req?.user?.organization_id || null,
           userId,
           action,
           description,

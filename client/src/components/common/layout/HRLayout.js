@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
-import { Users, FileText, BarChart3, Settings, Menu, X, Bell, Search } from 'lucide-react';
+import { Users, FileText, BarChart3, Settings, Menu, X, Search, Bell } from 'lucide-react';
+import NotificationBell from '../NotificationBell';
+import './HRLayout.css';
 
 const HRLayout = ({ children }) => {
   const { user } = useAuth();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3, path: '/hr/dashboard' },
@@ -20,32 +21,30 @@ const HRLayout = ({ children }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="hr-layout">
       {/* Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-gray-900 transform transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex items-center justify-between h-16 px-4 bg-gray-800">
-          <h1 className="text-white text-lg font-semibold">EmploCore HR</h1>
+      <div className={`hr-sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
+        <div className="hr-sidebar-header">
+          <h1 className="hr-sidebar-title">EmploCore HR</h1>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="text-gray-400 hover:text-white transition-colors"
+            className="hr-sidebar-toggle"
           >
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
         
-        <nav className="mt-8 px-4">
-          <ul className="space-y-2">
+        <nav className="hr-sidebar-nav">
+          <ul className="hr-sidebar-nav-list">
             {menuItems.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} className="hr-sidebar-nav-item">
                 <Link
                   to={item.path}
-                  className={`flex items-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    location.pathname === item.path
-                      ? 'bg-gray-700 text-white'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  className={`hr-sidebar-nav-link ${
+                    location.pathname === item.path ? 'active' : ''
                   }`}
                 >
-                  <item.icon size={20} className="mr-3" />
+                  <item.icon size={20} className="hr-sidebar-nav-icon" />
                   {item.label}
                 </Link>
               </li>
@@ -55,53 +54,46 @@ const HRLayout = ({ children }) => {
       </div>
 
       {/* Main Content */}
-      <div className={`flex-1 transition-all duration-300 ease-in-out ${sidebarOpen ? 'ml-64' : 'ml-0'}`}>
+      <div className={`hr-main-content ${sidebarOpen ? '' : 'sidebar-collapsed'}`}>
         {/* Top Bar */}
-        <header className="bg-white shadow-sm border-b border-gray-200">
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center flex-1">
-              <div className="relative">
-                <Search size={20} className="absolute left-3 top-1/2 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search employees, departments..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500 block w-64"
-                />
-              </div>
+        <header className="hr-topbar">
+          <div className="hr-topbar-content">
+            <div className="hr-search-container">
+              <Search size={20} className="hr-search-icon" />
+              <input
+                type="text"
+                placeholder="Search employees, departments..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="hr-search-input"
+              />
             </div>
 
-            <div className="flex items-center space-x-4">
+            <div className="hr-topbar-actions">
               {/* Notifications */}
-              <div className="relative">
-                <button
-                  onClick={() => setNotificationsOpen(!notificationsOpen)}
-                  className="p-2 text-gray-600 hover:text-gray-900 transition-colors relative"
-                >
-                  <Bell size={20} />
-                  <span className="absolute top-0 right-0 h-2 w-2 bg-red-500 rounded-full animate-pulse"></span>
-                </button>
-              </div>
+              <NotificationBell
+                targetPath="/hr/notifications"
+                className="hr-notification-button"
+                badgeClassName="hr-notification-badge"
+              />
 
               {/* User Menu */}
-              <div className="relative">
-                <button className="flex items-center space-x-2 p-2 text-gray-700 hover:text-gray-900 transition-colors">
-                  <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center text-white font-semibold">
-                    {user?.username?.charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-sm font-medium">{user?.username}</span>
+              <div className="hr-user-menu">
+                <button className="hr-user-avatar">
+                  {(user?.username || user?.email?.charAt(0) || 'U').charAt(0).toUpperCase()}
                 </button>
+                <div className="hr-user-info">
+                  <p className="hr-user-name">{user?.username || user?.email?.split('@')[0]}</p>
+                  <p className="hr-user-role">{user?.role?.replace('_', ' ') || 'Team User'}</p>
+                </div>
               </div>
             </div>
           </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="py-6">
-            {children}
-          </div>
+        <main className="hr-page-content">
+          {children}
         </main>
       </div>
     </div>

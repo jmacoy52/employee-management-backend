@@ -68,15 +68,21 @@ class LoginController {
         });
       }
 
-      // Check role access (allow all valid roles: admin, hr, employee)
-      if (!AuthService.isValidRole(user, ['admin', 'hr', 'employee'])) {
+      // Check role access (allow all valid application roles)
+      if (!AuthService.isValidRole(user, ['super_admin', 'admin', 'hr', 'employee'])) {
         // Fire-and-forget logging
         AuditLogService.log('LOGIN_DENIED', `Invalid role ${user.role} denied login for ${user.email}`, { userId: user.id }, req);
         return res.status(401).json({ error: 'Access denied. Invalid user role.' });
       }
 
       // Generate JWT token
-      const token = jwt.sign({ id: user.id, email: user.email, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
+      const token = jwt.sign({
+        id: user.id,
+        organization_id: user.organization_id,
+        email: user.email,
+        role: user.role,
+        username: user.username
+      }, JWT_SECRET, { expiresIn: '24h' });
 
 // Send response immediately with user data
       res.status(200).json({ 
@@ -85,6 +91,7 @@ class LoginController {
         user: {
           id: user.id,
           username: user.username,
+          organization_id: user.organization_id,
           email: user.email,
           role: user.role,
           profile_picture: user.profile_picture

@@ -12,6 +12,7 @@ import {
   Check,
   X
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "../../../../contexts/AuthContext";
 import { notificationAPI } from "../../../../services/apiService";
 import "./NotificationsPage.css";
@@ -22,7 +23,22 @@ const NotificationsPage = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
+
+  const iconMap = {
+    Bell,
+    CheckCircle,
+    XCircle,
+    AlertCircle,
+    Info
+  };
+
+  const isAdminView = location.pathname.startsWith("/admin");
+  const dashboardPath = isAdminView ? "/admin/dashboard" : "/hr/dashboard";
+  const subtitle = isAdminView
+    ? "Tenant-wide alerts, onboarding updates, and system events"
+    : "Stay updated with latest activities";
 
   // Fetch real notifications from API
   useEffect(() => {
@@ -103,14 +119,14 @@ const NotificationsPage = () => {
         <div className="header-content">
           <button 
             className="back-button"
-            onClick={() => navigate("/HRDashboard")}
+            onClick={() => navigate(dashboardPath)}
           >
             <ChevronLeft size={20} />
             <span>Back to Dashboard</span>
           </button>
           <div className="header-info">
             <h1 className="page-title">Notifications</h1>
-            <p className="page-subtitle">Stay updated with latest activities</p>
+            <p className="page-subtitle">{subtitle}</p>
           </div>
         </div>
       </div>
@@ -185,7 +201,7 @@ const NotificationsPage = () => {
                   className={`notification-item ${!notification.read ? "unread" : ""}`}
                 >
                   <div className="notification-icon">
-                    {notification.icon}
+                    {React.createElement(iconMap[notification.icon] || Bell, { size: 20 })}
                   </div>
                   <div className="notification-content">
                     <div className="notification-header">

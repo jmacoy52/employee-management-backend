@@ -1,9 +1,10 @@
 import React from 'react';
+import './Card.css';
 
 const Card = ({ children, className = '', ...props }) => {
   return (
     <div
-      className={`bg-white rounded-lg shadow-md border border-gray-200 ${className}`}
+      className={`card ${className}`}
       {...props}
     >
       {children}

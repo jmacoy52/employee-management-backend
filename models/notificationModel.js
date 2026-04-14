@@ -2,22 +2,23 @@ const db = require('../config/db');
 
 class NotificationModel {
   // Get all notifications for a user
-  static getNotificationsByUserId(userId, callback) {
+  static getNotificationsByUserId(organizationId, userId, callback) {
     const query = `
       SELECT * FROM notifications 
-      WHERE user_id = ? OR user_id IS NULL
+      WHERE organization_id = ? AND (user_id = ? OR user_id IS NULL)
       ORDER BY created_at DESC
     `;
-    db.query(query, [userId], callback);
+    db.query(query, [organizationId, userId], callback);
   }
 
   // Create a new notification
   static createNotification(notificationData, callback) {
     const query = `
-      INSERT INTO notifications (user_id, type, title, message, icon, color, read)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO notifications (organization_id, user_id, type, title, message, icon, color, read)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const values = [
+      notificationData.organization_id || null,
       notificationData.user_id || null,
       notificationData.type,
       notificationData.title,
@@ -30,45 +31,46 @@ class NotificationModel {
   }
 
   // Mark notification as read
-  static markAsRead(notificationId, callback) {
-    const query = 'UPDATE notifications SET \`read\` = true WHERE id = ?';
-    db.query(query, [notificationId], callback);
+  static markAsRead(organizationId, notificationId, callback) {
+    const query = 'UPDATE notifications SET `read` = true WHERE id = ? AND organization_id = ?';
+    db.query(query, [notificationId, organizationId], callback);
   }
 
   // Mark all notifications as read for a user
-  static markAllAsRead(userId, callback) {
-    const query = 'UPDATE notifications SET \`read\` = true WHERE user_id = ? OR user_id IS NULL';
-    db.query(query, [userId], callback);
+  static markAllAsRead(organizationId, userId, callback) {
+    const query = 'UPDATE notifications SET `read` = true WHERE organization_id = ? AND (user_id = ? OR user_id IS NULL)';
+    db.query(query, [organizationId, userId], callback);
   }
 
   // Delete notification
-  static deleteNotification(notificationId, callback) {
-    const query = 'DELETE FROM notifications WHERE id = ?';
-    db.query(query, [notificationId], callback);
+  static deleteNotification(organizationId, notificationId, callback) {
+    const query = 'DELETE FROM notifications WHERE id = ? AND organization_id = ?';
+    db.query(query, [notificationId, organizationId], callback);
   }
 
   // Clear all notifications for a user
-  static clearAllNotifications(userId, callback) {
-    const query = 'DELETE FROM notifications WHERE user_id = ? OR user_id IS NULL';
-    db.query(query, [userId], callback);
+  static clearAllNotifications(organizationId, userId, callback) {
+    const query = 'DELETE FROM notifications WHERE organization_id = ? AND (user_id = ? OR user_id IS NULL)';
+    db.query(query, [organizationId, userId], callback);
   }
 
   // Get unread count for a user
-  static getUnreadCount(userId, callback) {
+  static getUnreadCount(organizationId, userId, callback) {
     const query = `
       SELECT COUNT(*) as count FROM notifications 
-      WHERE (user_id = ? OR user_id IS NULL) AND \`read\` = false
+      WHERE organization_id = ? AND (user_id = ? OR user_id IS NULL) AND \`read\` = false
     `;
-    db.query(query, [userId], callback);
+    db.query(query, [organizationId, userId], callback);
   }
 
   // Create system notification (for all users)
   static createSystemNotification(notificationData, callback) {
     const query = `
-      INSERT INTO notifications (user_id, type, title, message, icon, color, read)
-      VALUES (NULL, ?, ?, ?, ?, ?, ?)
+      INSERT INTO notifications (organization_id, user_id, type, title, message, icon, color, read)
+      VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
     `;
     const values = [
+      notificationData.organization_id || null,
       notificationData.type,
       notificationData.title,
       notificationData.message,

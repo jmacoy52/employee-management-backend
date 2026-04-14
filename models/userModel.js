@@ -2,22 +2,22 @@ const db = require('../config/db');
 
 class UserModel {
   static registerUser(userData, callback) {
-    const query = 'INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)';
-    const values = [userData.username, userData.email, userData.password, userData.role || 'user'];
+    const query = 'INSERT INTO users (organization_id, username, email, password, role) VALUES (?, ?, ?, ?, ?)';
+    const values = [userData.organization_id || null, userData.username, userData.email, userData.password, userData.role || 'user'];
     db.query(query, values, callback);
   }
 
    //Update User Role
-  static updateUserRole(id, userData, callback) {
-    const query = 'UPDATE users SET role = ? WHERE id = ?';
-    const values = [userData.role, id];
+  static updateUserRole(id, organizationId, userData, callback) {
+    const query = 'UPDATE users SET role = ? WHERE id = ? AND organization_id = ?';
+    const values = [userData.role, id, organizationId];
     db.query(query, values, callback);
   };
 
    //Delete user
-   static deleteUser(id, callback){
-    const query = 'DELETE FROM users WHERE id=?';
-    db.query(query, [id], callback);
+   static deleteUser(id, organizationId, callback){
+    const query = 'DELETE FROM users WHERE id=? AND organization_id = ?';
+    db.query(query, [id, organizationId], callback);
    }
  // Inside the UserModel class
 static findUserByEmail(email) {
@@ -39,16 +39,19 @@ static findUserByEmail(email) {
 }
 
   // Find user by ID
-  static findUserById(id, callback) {
-    const query = 'SELECT * FROM users WHERE id = ?';
-    db.query(query, [id], callback);
+  static findUserById(id, organizationId, callback) {
+    const query = 'SELECT * FROM users WHERE id = ? AND organization_id = ?';
+    db.query(query, [id, organizationId], callback);
   }
 
   // Find user by ID (Promise version)
-  static findUserByIdAsync(id) {
+  static findUserByIdAsync(id, organizationId = null) {
     return new Promise((resolve, reject) => {
-      const query = 'SELECT * FROM users WHERE id = ?';
-      db.query(query, [id], (err, results) => {
+      const query = organizationId
+        ? 'SELECT * FROM users WHERE id = ? AND organization_id = ?'
+        : 'SELECT * FROM users WHERE id = ?';
+      const values = organizationId ? [id, organizationId] : [id];
+      db.query(query, values, (err, results) => {
         if (err) {
           return reject(err);
         }
@@ -61,17 +64,17 @@ static findUserByEmail(email) {
   }
 
   // Get user profile by ID
-  static getProfile(id, callback) {
+  static getProfile(id, organizationId, callback) {
     const query = `
-      SELECT id, username, email, role, profile_picture, created_at 
-      FROM users 
-      WHERE id = ?
+      SELECT id, organization_id, username, email, role, profile_picture, created_at 
+      FROM users
+      WHERE id = ? AND organization_id = ?
     `;
-    db.query(query, [id], callback);
+    db.query(query, [id, organizationId], callback);
   }
 
   // Update user profile
-  static updateUserProfile(id, userData, callback) {
+  static updateUserProfile(id, organizationId, userData, callback) {
     const fields = [];
     const values = [];
     
@@ -80,8 +83,8 @@ static findUserByEmail(email) {
       values.push(userData[key]);
     });
     
-    values.push(id);
-    const query = `UPDATE users SET ${fields.join(', ')} WHERE id = ?`;
+    values.push(id, organizationId);
+    const query = `UPDATE users SET ${fields.join(', ')} WHERE id = ? AND organization_id = ?`;
     db.query(query, values, callback);
   }
 
@@ -92,15 +95,15 @@ static findUserByEmail(email) {
   }
 
   // Get all users with pagination
-  static getAllUsersPaginated(limit, offset, callback) {
-    const query = 'SELECT id, username, email, role, created_at FROM users ORDER BY id DESC LIMIT ? OFFSET ?';
-    db.query(query, [limit, offset], callback);
+  static getAllUsersPaginated(organizationId, limit, offset, callback) {
+    const query = 'SELECT id, organization_id, username, email, role, created_at FROM users WHERE organization_id = ? ORDER BY id DESC LIMIT ? OFFSET ?';
+    db.query(query, [organizationId, limit, offset], callback);
   }
 
   // Get total count of users
-  static getTotalUserCount(callback) {
-    const query = 'SELECT COUNT(*) as total FROM users';
-    db.query(query, (err, results) => {
+  static getTotalUserCount(organizationId, callback) {
+    const query = 'SELECT COUNT(*) as total FROM users WHERE organization_id = ?';
+    db.query(query, [organizationId], (err, results) => {
       if (err) return callback(err);
       callback(null, results[0].total);
     });
@@ -110,11 +113,13 @@ static findUserByEmail(email) {
   static createUser(userData, callback) {
     const query = `
       INSERT INTO users (
-        email, password, role, firstName, lastName, department, position, 
+        organization_id, username, email, password, role, firstName, lastName, department, position, 
         isTemporaryPassword, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const values = [
+      userData.organization_id,
+      userData.username,
       userData.email,
       userData.password,
       userData.role,

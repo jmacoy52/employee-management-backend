@@ -70,7 +70,7 @@ const DepartmentsPage = () => {
         <div className="header-content">
           <button 
             className="back-button"
-            onClick={() => navigate("/HRDashboard")}
+            onClick={() => navigate("/hr/dashboard")}
           >
             <ChevronLeft size={20} />
             <span>Back to Dashboard</span>

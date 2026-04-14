@@ -13,8 +13,11 @@ const Home = () => {
 
   const checkSystemStatus = useCallback(async () => {
     try {
+      console.log('🔍 Checking system status...');
       const response = await fetch("http://localhost:5000/api/system/status");
       const data = await response.json();
+      
+      console.log('📊 System status response:', data);
       
       setSystemStatus({
         isInitialized: data.isInitialized,
@@ -24,9 +27,13 @@ const Home = () => {
 
       // If system is not initialized, redirect to setup
       if (!data.isInitialized) {
-        navigate("/setup");
+        console.log('🔄 System not initialized, redirecting to account creation...');
+        navigate("/account-creation");
+      } else {
+        console.log('✅ System already initialized, showing login form');
       }
     } catch (err) {
+      console.error('❌ Error checking system status:', err);
       setSystemStatus({
         isInitialized: false,
         loading: false,
@@ -138,7 +145,7 @@ const Home = () => {
 
             <div className="login-footer">
               <p>Need help accessing your account?</p>
-              <Link to="/help" className="help-link">
+              <Link to="/contact" className="help-link">
                 Contact Support
               </Link>
             </div>

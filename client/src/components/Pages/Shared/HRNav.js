@@ -20,7 +20,7 @@ const HRNav = () => {
     <nav className="hr-nav">
       <div className="nav-center">
         <ul className="nav-menu">
-          <li onClick={() => navigate("/HRDashboard")}><Home size={18}/> Dashboard</li>
+          <li onClick={() => navigate("/hr/dashboard")}><Home size={18}/> Dashboard</li>
           <li onClick={() => navigate("/hr/employees")}><Users size={18}/> Employee List</li>
           <li onClick={() => navigate("/hr/create-employee")}><Plus size={18}/> Add Employee</li>
           <li onClick={() => navigate("/hr/profile")}><UserCircle size={18}/> My Profile</li>

@@ -4,7 +4,7 @@ const AuditLogModel = require('../models/auditLogModel');
 class EmployeeController {
   // Get all employees
   static getEmployees(req, res) {
-    Employee.getAllEmployees((err, data) => {
+    Employee.getAllEmployees(req.user.organization_id, (err, data) => {
       if (err) {
         console.error('Error fetching employees:', err);
         return res.status(500).json({ error: 'Failed to fetch employees' });
@@ -22,7 +22,7 @@ class EmployeeController {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const newEmployee = { FullName, position, Department, salary, email };
+    const newEmployee = { organization_id: req.user.organization_id, FullName, position, Department, salary, email };
     Employee.insertEmployee(newEmployee, (err, result) => {
       if (err) {
         console.error('Error inserting employee:', err);
@@ -31,9 +31,10 @@ class EmployeeController {
 
       // Log this action
       AuditLogModel.insertLog({
+        organizationId: req.user.organization_id,
         userId: req.user.id,
-        actions: 'CREATE_EMPLOYEE',
-        descriptions: `Employee ${FullName} created by ${req.user.email}`
+        action: 'CREATE_EMPLOYEE',
+        description: `Employee ${FullName} created by ${req.user.email}`
       }, (logErr) => {
         if (logErr) console.error('Failed to insert audit log:', logErr);
       });
@@ -51,7 +52,7 @@ class EmployeeController {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const updatedData = { FullName, position, Department, salary };
+    const updatedData = { organization_id: req.user.organization_id, FullName, position, Department, salary };
 
     Employee.updateEmployee(employeeId, updatedData, (err, result) => {
       if (err) {
@@ -65,9 +66,10 @@ class EmployeeController {
 
       // Log this action
       AuditLogModel.insertLog({
+        organizationId: req.user.organization_id,
         userId: req.user.id,
-        actions: 'UPDATE_EMPLOYEE',
-        descriptions: `Employee ${employeeId} updated by ${req.user.email}`
+        action: 'UPDATE_EMPLOYEE',
+        description: `Employee ${employeeId} updated by ${req.user.email}`
       }, (logErr) => {
         if (logErr) console.error('Failed to insert audit log:', logErr);
       });
@@ -80,7 +82,7 @@ class EmployeeController {
   static deleteEmployee(req, res) {
     const employeeId = req.params.id;
 
-    Employee.deleteEmployee(employeeId, (err, result) => {
+    Employee.deleteEmployee(employeeId, req.user.organization_id, (err, result) => {
       if (err) {
         console.error('Error deleting employee:', err);
         return res.status(500).json({ error: 'Failed to delete employee' });
@@ -92,9 +94,10 @@ class EmployeeController {
 
       // Log this action
       AuditLogModel.insertLog({
+        organizationId: req.user.organization_id,
         userId: req.user.id,
-        actions: 'DELETE_EMPLOYEE',
-        descriptions: `Employee ${employeeId} deleted by ${req.user.email}`
+        action: 'DELETE_EMPLOYEE',
+        description: `Employee ${employeeId} deleted by ${req.user.email}`
       }, (logErr) => {
         if (logErr) console.error('Failed to insert audit log:', logErr);
       });
@@ -107,7 +110,7 @@ class EmployeeController {
   static getEmployeeById(req, res) {
     const employeeId = req.params.id;
 
-    Employee.getEmployeeById(employeeId, (err, employee) => {
+    Employee.getEmployeeById(employeeId, req.user.organization_id, (err, employee) => {
       if (err) {
         console.error('Error fetching employee:', err);
         return res.status(500).json({ error: 'Failed to fetch employee' });

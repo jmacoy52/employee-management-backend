@@ -1,220 +1,194 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { toast } from "react-hot-toast";
-import { 
-  Users, 
-  Shield, 
-  UserCheck, 
+import {
   Activity,
-  TrendingUp,
-  Clock,
-  Calendar,
-  AlertTriangle,
-  ScrollText
+  ArrowRight,
+  Briefcase,
+  Shield,
+  Users,
+  UserCheck
 } from "lucide-react";
+import { adminAPI, hrAPI } from "../../../services/apiService";
+import { useAuth } from "../../../contexts/AuthContext";
 import "./DashboardOverview.css";
 
-const DashboardOverview = ({ showActions = true }) => {
+const DashboardOverview = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalUsers: 0,
     adminUsers: 0,
     hrUsers: 0,
     employeeUsers: 0,
-    superAdminUsers: 0
+    totalEmployees: 0
   });
-  const [recentActivity, setRecentActivity] = useState([]);
+  const [recentActivities, setRecentActivities] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   useEffect(() => {
-    fetchDashboardData();
+    const loadDashboard = async () => {
+      try {
+        const [userStatsRes, employeesRes, activityRes] = await Promise.all([
+          fetch("http://localhost:5000/api/users/stats", {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`
+            }
+          }).then((res) => res.json()),
+          hrAPI.getEmployees(),
+          adminAPI.getRecentActivities()
+        ]);
+
+        setStats({
+          totalUsers: Number(userStatsRes.totalUsers || 0),
+          adminUsers: Number(userStatsRes.adminUsers || 0),
+          hrUsers: Number(userStatsRes.hrUsers || 0),
+          employeeUsers: Number(userStatsRes.employeeUsers || 0),
+          totalEmployees: Number(employeesRes.data?.pagination?.totalEmployees || employeesRes.data?.employees?.length || 0)
+        });
+        setRecentActivities(Array.isArray(activityRes.data) ? activityRes.data.slice(0, 5) : []);
+      } catch (error) {
+        console.error("Dashboard load failed:", error);
+        toast.error("Failed to load dashboard insights.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboard();
   }, []);
 
-  const fetchDashboardData = async () => {
-    try {
-      const token = localStorage.getItem("token");
-      if (!token) {
-        setError("No authentication token found");
-        setLoading(false);
-        return;
-      }
-
-      // Fetch user statistics
-      const statsResponse = await axios.get("http://localhost:5000/api/users/stats", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      // Fetch recent activity (audit logs)
-      const activityResponse = await axios.get("http://localhost:5000/api/admin/audit-logs", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      setStats(statsResponse.data);
-      setRecentActivity(activityResponse.data.slice(0, 5)); // Get last 5 activities
-      setLoading(false);
-      setError("");
-    } catch (err) {
-      console.error("Dashboard data fetch error:", err);
-      const errorMessage = err.response?.data?.error || err.message || "Failed to fetch dashboard data";
-      setError(errorMessage);
-      setLoading(false);
-      toast.error(errorMessage);
-    }
-  };
-
-  const statCards = [
+  const cards = [
     {
-      title: "Total Users",
+      label: "Organization Users",
       value: stats.totalUsers,
       icon: Users,
-      color: "#3b82f6",
-      trend: "Active",
-      trendColor: "#10b981"
+      tone: "sky"
     },
     {
-      title: "Super Admins",
-      value: stats.superAdminUsers,
-      icon: Shield,
-      color: "#dc2626",
-      trend: "System Admins",
-      trendColor: "#64748b"
-    },
-    {
-      title: "Admin Users",
+      label: "Administrators",
       value: stats.adminUsers,
       icon: Shield,
-      color: "#8b5cf6",
-      trend: "Administrators",
-      trendColor: "#64748b"
+      tone: "amber"
     },
     {
-      title: "HR Users",
+      label: "HR Accounts",
       value: stats.hrUsers,
       icon: UserCheck,
-      color: "#10b981",
-      trend: "Employee Managers",
-      trendColor: "#64748b"
+      tone: "emerald"
     },
     {
-      title: "Employee Users",
-      value: stats.employeeUsers,
-      icon: Users,
-      color: "#f59e0b",
-      trend: "Self-Service",
-      trendColor: "#64748b"
+      label: "Employees",
+      value: stats.totalEmployees || stats.employeeUsers,
+      icon: Briefcase,
+      tone: "rose"
+    }
+  ];
+
+  const actions = [
+    {
+      title: "Manage organization users",
+      description: "Create admins, HR staff, and employee accounts with temporary passwords.",
+      cta: "Open user management",
+      onClick: () => navigate("/admin/users")
+    },
+    {
+      title: "Review recent activity",
+      description: "Inspect audit logs for onboarding, password changes, and organization operations.",
+      cta: "Open audit log",
+      onClick: () => navigate("/admin/auditlog")
+    },
+    {
+      title: "View live alerts",
+      description: "Track system and organization notifications without relying on sample data.",
+      cta: "Open notifications",
+      onClick: () => navigate("/admin/notifications")
     }
   ];
 
   if (loading) {
     return (
-      <div className="dashboard-overview">
-        <div className="overview-loading">
-          <Activity className="spinner" size={32} />
-          <p>Loading dashboard...</p>
-        </div>
+      <div className="overview-loading">
+        <Activity className="spinner" size={28} />
+        <p>Loading organization dashboard...</p>
       </div>
     );
   }
 
   return (
     <div className="dashboard-overview">
-      {/* Statistics Grid */}
-      <div className="stats-section">
-        <h2 className="section-title">System Overview</h2>
-        <div className="stats-grid">
-          {statCards.map((stat, index) => (
-            <div key={index} className="stat-card">
-              <div 
-                className="stat-icon" 
-                style={{ background: stat.color }}
-              >
-                <stat.icon size={24} color="white" />
-              </div>
-              <div className="stat-content">
-                <h3 className="stat-number">{stat.value}</h3>
-                <p className="stat-label">{stat.title}</p>
-                <div className="stat-trend" style={{ color: stat.trendColor }}>
-                  <TrendingUp size={14} />
-                  <span>{stat.trend}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+      <section className="overview-hero">
+        <div>
+          <p className="overview-kicker">Organization control center</p>
+          <h2>{user?.role === "super_admin" ? "Super Admin command view" : "Administrative overview"}</h2>
+          <p>
+            This workspace is scoped to your organization and surfaces the operational signals you need
+            before inviting or managing more users.
+          </p>
         </div>
-      </div>
+      </section>
 
-      {/* Recent Activity */}
-      <div className="activity-section">
-        <h2 className="section-title">Recent Activity</h2>
-        <div className="activity-list">
-          {recentActivity.length > 0 ? (
-            recentActivity.map((activity, index) => (
-              <div key={index} className="activity-item">
-                <div className="activity-icon">
-                  <Activity size={16} />
-                </div>
-                <div className="activity-content">
-                  <p className="activity-description">{activity.description}</p>
-                  <div className="activity-meta">
-                    <span className="activity-user">{activity.username || `User ${activity.user_id}`}</span>
-                    <span className="activity-time">
-                      {new Date(activity.created_at).toLocaleString()}
-                    </span>
+      <section className="stats-grid">
+        {cards.map((card) => (
+          <article key={card.label} className={`stat-card stat-card-${card.tone}`}>
+            <div className="stat-icon">
+              <card.icon size={22} />
+            </div>
+            <div className="stat-content">
+              <p className="stat-label">{card.label}</p>
+              <h3 className="stat-number">{card.value}</h3>
+            </div>
+          </article>
+        ))}
+      </section>
+
+      <section className="overview-panels">
+        <div className="panel-card">
+          <div className="panel-header">
+            <h3>Recent activity</h3>
+            <button type="button" className="panel-link" onClick={() => navigate("/admin/auditlog")}>
+              See all
+            </button>
+          </div>
+          <div className="activity-list">
+            {recentActivities.length === 0 ? (
+              <p className="empty-copy">No organization activity has been recorded yet.</p>
+            ) : (
+              recentActivities.map((activity) => (
+                <div key={activity.id} className="activity-item">
+                  <div className="activity-dot" />
+                  <div>
+                    <p className="activity-title">{activity.description || activity.action}</p>
+                    <p className="activity-meta">
+                      {activity.username || "System"} • {new Date(activity.created_at).toLocaleString()}
+                    </p>
                   </div>
                 </div>
-              </div>
-            ))
-          ) : (
-            <div className="no-activity">
-              <Clock size={32} />
-              <p>No recent activity</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      {showActions && (
-        <div className="actions-section">
-          <h2 className="section-title">Quick Actions</h2>
-          <div className="actions-grid">
-            <div className="action-card">
-              <div className="action-icon">
-                <Users size={24} />
-              </div>
-              <div className="action-content">
-                <h3>View All Users</h3>
-                <p>Browse and manage system users</p>
-              </div>
-            </div>
-            <div className="action-card">
-              <div className="action-icon">
-                <Shield size={24} />
-              </div>
-              <div className="action-content">
-                <h3>User Management</h3>
-                <p>Create and manage user accounts</p>
-              </div>
-            </div>
-            <div className="action-card">
-              <div className="action-icon">
-                <ScrollText size={24} />
-              </div>
-              <div className="action-content">
-                <h3>Audit Log</h3>
-                <p>Review system activity</p>
-              </div>
-            </div>
+              ))
+            )}
           </div>
         </div>
-      )}
 
-      {error && (
-        <div className="error-message">
-          <AlertTriangle size={20} />
-          <span>{error}</span>
+        <div className="panel-card">
+          <div className="panel-header">
+            <h3>Quick actions</h3>
+          </div>
+          <div className="quick-action-list">
+            {actions.map((action) => (
+              <button key={action.title} type="button" className="quick-action-card" onClick={action.onClick}>
+                <div>
+                  <h4>{action.title}</h4>
+                  <p>{action.description}</p>
+                </div>
+                <span className="quick-action-link">
+                  {action.cta}
+                  <ArrowRight size={16} />
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+      </section>
     </div>
   );
 };

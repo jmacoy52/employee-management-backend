@@ -1,22 +1,25 @@
 const db = require('./config/db');
 
-// This script is for TESTING ONLY - it clears all users to test setup flow
-console.log('⚠️  WARNING: This will clear all users from the database!');
-console.log('⚠️  Use this ONLY for testing the setup flow!');
+console.log('WARNING: This will clear users, employees, audit logs, and notifications.');
+console.log('Use this only for testing the setup flow.');
 
-// Clear users table
-const clearUsersQuery = 'DELETE FROM users';
+const resetQuery = `
+  SET FOREIGN_KEY_CHECKS = 0;
+  DELETE FROM notifications;
+  DELETE FROM audit_logs;
+  DELETE FROM employees;
+  DELETE FROM users;
+  SET FOREIGN_KEY_CHECKS = 1;
+`;
 
-db.query(clearUsersQuery, (err, result) => {
+db.query(resetQuery, (err) => {
   if (err) {
-    console.error('Error clearing users:', err);
+    console.error('Error clearing tenant data:', err);
     process.exit(1);
   }
-  
-  console.log('✅ Users table cleared successfully');
-  console.log('📋 System is now ready for setup testing');
-  console.log('🌐 Visit http://localhost:3000 to test setup flow');
-  
+
+  console.log('Tenant data cleared successfully.');
+  console.log('System is now ready for setup testing.');
   db.end();
   process.exit(0);
 });

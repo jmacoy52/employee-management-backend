@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const UserController = require('../controllers/userController');
 const LoginController = require('../controllers/auth/loginController');
 const ForgotPasswordController = require('../controllers/auth/forgotPasswordController');
+const UserController = require('../controllers/userController');
 const { authenticateToken, authorizeAdmin } = require('../middleware/authMiddleware');
 const { validationResult } = require('express-validator');
 const multer = require('multer');
@@ -46,14 +46,10 @@ const handleValidation = (req, res, next) => {
 };
 
 // Validators
-const registerValidator = require('../validator/registerValidator');
 const loginValidator = require('../validator/loginValidator');
 const { checkSchema } = require('express-validator');
 const roleValidationSchema = require('../validator/roleValidator');
 const roleValidator = checkSchema(roleValidationSchema);
-
-// Register (Public)
-router.post('/register', registerValidator, handleValidation, UserController.register);
 
 // Login (Public)
 router.post('/login', loginValidator, handleValidation, LoginController.login);

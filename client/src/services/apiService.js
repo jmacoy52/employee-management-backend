@@ -44,7 +44,6 @@ api.interceptors.response.use(
 // API methods
 export const authAPI = {
   login: (credentials) => api.post('/api/users/login', credentials),
-  register: (userData) => api.post('/api/users/register', userData),
   forgotPassword: (email) => api.post('/api/users/forgot-password', { email }),
   resetPassword: (token, newPassword) => api.post('/api/users/reset-password', { token, newPassword }),
   changePassword: (passwords) => api.put('/api/users/change-password', passwords),
@@ -72,9 +71,10 @@ export const hrAPI = {
 export const adminAPI = {
   getUsers: () => api.get('/api/admin/users'),
   createUser: (userData) => api.post('/api/admin/users', userData),
-  updateUser: (id, userData) => api.put(`/api/admin/users/${id}`, userData),
+  updateUserRole: (id, userData) => api.put(`/api/admin/users/${id}/role`, userData),
   deleteUser: (id) => api.delete(`/api/admin/users/${id}`),
   getAuditLogs: () => api.get('/api/admin/audit-logs'),
+  getRecentActivities: () => api.get('/api/admin/audit-logs/recent'),
 };
 
 export const notificationAPI = {

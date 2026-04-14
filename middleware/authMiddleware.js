@@ -14,17 +14,24 @@ function authenticateToken(req, res, next) {
 }
 
 function authorizeAdmin(req, res, next) {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied. Admin role required.' });
+  if (!['admin', 'super_admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Access denied. Admin or Super Admin role required.' });
+  }
+  next();
+}
+
+function authorizeSuperAdmin(req, res, next) {
+  if (req.user.role !== 'super_admin') {
+    return res.status(403).json({ error: 'Access denied. Super Admin role required.' });
   }
   next();
 }
 
 function authorizeHR(req, res, next) {
-  if (req.user.role !== 'hr' && req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Access denied. HR or Admin role required.' });
+  if (!['hr', 'admin', 'super_admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Access denied. HR, Admin, or Super Admin role required.' });
   }
   next();
 }
 
-module.exports = { authenticateToken, authorizeAdmin, authorizeHR };
+module.exports = { authenticateToken, authorizeAdmin, authorizeSuperAdmin, authorizeHR };

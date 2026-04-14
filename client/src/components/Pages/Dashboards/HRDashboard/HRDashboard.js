@@ -104,7 +104,7 @@ const HRDashboard = () => {
   const today = new Date().toLocaleDateString();
 
   const navigationItems = [
-    { icon: <Home size={18} />, label: "Dashboard", path: "/HRDashboard", active: true },
+    { icon: <Home size={18} />, label: "Dashboard", path: "/hr/dashboard", active: true },
     { icon: <Users size={18} />, label: "Employees", path: "/hr/employees" },
     { icon: <Plus size={18} />, label: "Add Employee", path: "/hr/create-employee" },
     { icon: <Building2 size={18} />, label: "Departments", path: "/hr/departments" },

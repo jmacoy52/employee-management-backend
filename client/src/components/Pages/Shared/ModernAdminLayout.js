@@ -3,62 +3,62 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { 
   Home, 
   Users, 
-  Settings, 
   FileText, 
   UserCheck, 
   LogOut, 
   ChevronLeft,
   ChevronRight,
-  BarChart3,
   Shield,
-  Menu,
-  X
+  Settings
 } from "lucide-react";
+import { useAuth } from "../../../contexts/AuthContext";
+import NotificationBell from "../../common/NotificationBell";
 import "./ModernAdminLayout.css";
 
 const ModernAdminLayout = ({ children, title, subtitle }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const navigation = [
     {
       name: "Dashboard",
-      href: "/AdminDashboard",
+      path: "/admin/dashboard",
       icon: Home,
       description: "System overview and analytics"
     },
     {
-      name: "Users",
-      href: "/admin/users",
-      icon: Users,
-      description: "View and manage all users"
-    },
-    {
       name: "User Management",
-      href: "/admin/usermanagement",
-      icon: Settings,
-      description: "Create and edit user accounts"
+      path: "/admin/users",
+      icon: Users,
+      description: "Create and manage user accounts"
     },
     {
       name: "Audit Log",
-      href: "/admin/auditlog",
+      path: "/admin/auditlog",
       icon: FileText,
       description: "System activity and changes"
     },
     {
+      name: "Notifications",
+      path: "/admin/notifications",
+      icon: Settings,
+      description: "Tenant alerts and activity"
+    },
+    {
       name: "HR Dashboard",
-      href: "/admin/hr",
+      path: "/hr/dashboard",
       icon: UserCheck,
       description: "HR functionalities"
     }
   ];
 
-  const isActive = (href) => location.pathname === href;
+  const isActive = (path) => location.pathname === path;
 
   const handleLogout = () => {
-    localStorage.clear();
-    navigate("/");
+    logout();
+    navigate("/login");
   };
 
   return (
@@ -92,8 +92,8 @@ const ModernAdminLayout = ({ children, title, subtitle }) => {
               {navigation.map((item) => (
                 <li key={item.name}>
                   <button
-                    className={`nav-button ${isActive(item.href) ? 'active' : ''}`}
-                    onClick={() => navigate(item.href)}
+                    className={`nav-button ${isActive(item.path) ? 'active' : ''}`}
+                    onClick={() => navigate(item.path)}
                   >
                     <item.icon className="nav-icon" />
                     {!sidebarCollapsed && (
@@ -112,12 +112,12 @@ const ModernAdminLayout = ({ children, title, subtitle }) => {
         <div className="sidebar-footer">
           <div className="user-profile">
             <div className="user-avatar">
-              {localStorage.getItem('username')?.charAt(0).toUpperCase() || 'A'}
+              {(user?.username || user?.email?.charAt(0) || 'A').charAt(0).toUpperCase()}
             </div>
             {!sidebarCollapsed && (
               <div className="user-info">
-                <div className="user-name">{localStorage.getItem('username') || 'Admin'}</div>
-                <div className="user-role">Administrator</div>
+                <div className="user-name">{user?.username || user?.email?.split('@')[0] || 'Admin'}</div>
+                <div className="user-role">{user?.role === 'super_admin' ? 'Super Admin' : 'Administrator'}</div>
               </div>
             )}
           </div>
@@ -137,11 +137,16 @@ const ModernAdminLayout = ({ children, title, subtitle }) => {
               {subtitle && <p className="page-subtitle">{subtitle}</p>}
             </div>
             <div className="header-right">
+              <NotificationBell
+                targetPath="/admin/notifications"
+                className="admin-notification-button"
+                badgeClassName="admin-notification-badge"
+              />
               <div className="breadcrumb">
                 <span>Admin</span>
                 <ChevronRight className="breadcrumb-separator" />
                 <span className="breadcrumb-current">
-                  {navigation.find(item => isActive(item.href))?.name || 'Dashboard'}
+                  {navigation.find(item => isActive(item.path))?.name || 'Dashboard'}
                 </span>
               </div>
             </div>
