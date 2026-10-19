@@ -39,3 +39,24 @@ SELECT u.id, 'SEED', 'Demo data loaded'
 FROM users u
 WHERE u.email = 'admin@emplocore.demo'
   AND NOT EXISTS (SELECT 1 FROM audit_logs WHERE actions = 'SEED');
+
+-- Demo departments (needs migration 004): one row per department used above, with a short
+-- description and a head, and every demo employee linked to its department.
+INSERT IGNORE INTO departments (name, description) VALUES
+  ('Engineering',     'Builds and runs the company''s software products'),
+  ('Finance',         'Accounts, payroll and financial reporting'),
+  ('Marketing',       'Brand, campaigns and communications'),
+  ('Sales',           'Customer acquisition and account management'),
+  ('Operations',      'Logistics, facilities and day-to-day operations'),
+  ('Human Resources', 'Recruitment, onboarding and staff welfare');
+
+UPDATE employees e JOIN departments d ON d.name = e.Department
+SET e.department_id = d.id
+WHERE e.email LIKE '%@emplocore.demo' AND e.department_id IS NULL;
+
+UPDATE departments d JOIN employees e ON e.email = 'kwame.mensah@emplocore.demo'
+SET d.head_employee_id = e.id
+WHERE d.name = 'Engineering' AND d.head_employee_id IS NULL;
+UPDATE departments d JOIN employees e ON e.email = 'kofi.asante@emplocore.demo'
+SET d.head_employee_id = e.id
+WHERE d.name = 'Finance' AND d.head_employee_id IS NULL;

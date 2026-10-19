@@ -3,7 +3,9 @@
 This is the Express and MySQL REST API behind the EmploCore frontend
 ([employee-management-system-frontend](https://github.com/jmacoy52/employee-management-system-frontend), live at https://emplocore.vercel.app).
 
-> **Branch note:** this branch (`v1/aiven-production`) continues the v1 API that the frontend calls (`/api/users/*`, `/api/employees`, `/api/audit-logs`). The v2 rewrite on `main` (multi-tenant, `/api/admin/*`, paginated responses) is **not** compatible with the current frontend.
+> **Moving to a real (non-demo) deployment?** Follow [docs/PRODUCTION.md](docs/PRODUCTION.md): new database, migrations, first admin, demo mode off, backups and secrets.
+
+> **Branch note:** this branch (`v1/aiven-production`) continues the v1 API that the frontend calls (`/api/users/*`, `/api/employees`, `/api/departments`, `/api/audit-logs`). The v2 rewrite on `main` (multi-tenant, `/api/admin/*`, paginated responses) is **not** compatible with the current frontend.
 
 ## Stack
 Node 18+, Express 5, mysql2 (connection pool with TLS, raw parameterised SQL), bcryptjs, jsonwebtoken, express-validator, helmet, express-rate-limit.
@@ -26,9 +28,16 @@ Node 18+, Express 5, mysql2 (connection pool with TLS, raw parameterised SQL), b
 | `POST /api/users/:id/temporary-password` | Admin | Optional `{ password }`; otherwise one is generated and returned once. User must change it at next sign-in |
 | `POST /api/users/:id/reset-link` | Admin | Returns a one-time `token` (default 60 min) for `/reset-password?token=...` |
 | `DELETE /api/users/:id` | Admin | Admins can't delete their own account |
-| `GET /api/employees` (`?limit=&offset=`), `GET /api/employees/:id` | HR, Admin | List includes `user_id`, `linked_username`, `linked_email` |
-| `POST /api/employees`, `PUT/DELETE /api/employees/:id` | HR, Admin | Validated (name, position, Department, salary ≥ 0; email optional, unique) |
+| `GET /api/employees` (`?limit=&offset=&department_id=`), `GET /api/employees/:id` | HR, Admin | List includes `user_id`, `linked_username`, `linked_email`, `department_id`, `department_name`. `department_id=none` lists employees without a department |
+| `POST /api/employees`, `PUT/DELETE /api/employees/:id` | HR, Admin | Validated (name, position, department, salary ≥ 0; email optional, unique). Send `department_id`; the older free-text `Department` is still accepted (matched by name, or a department is created). A deactivated department cannot receive new employees |
 | `PUT /api/employees/:id/link` | HR, Admin | `{ user_id }` to link an account, `{ user_id: null }` to unlink |
+| `GET /api/departments`, `GET /api/departments/:id` | HR, Admin | List with `employee_count`, `head_name`, `is_active`; one department includes `members` |
+| `POST /api/departments`, `PUT /api/departments/:id` | HR, Admin | `{ name, description? }`. Names are unique (case-insensitive). Renaming updates the employees' `Department` copy |
+| `PUT /api/departments/:id/status` | HR, Admin | `{ is_active: true|false }`. Deactivated departments keep their members but accept no new ones |
+| `DELETE /api/departments/:id` | HR, Admin | Only when it has no employees, otherwise `409` |
+| `POST /api/departments/:id/employees` | HR, Admin | `{ employee_ids: [..] }` moves employees into the department (anyone heading another department stops doing so) |
+| `DELETE /api/departments/:id/employees/:employeeId` | HR, Admin | Removes the employee from the department (and from its head role) |
+| `PUT /api/departments/:id/head` | HR, Admin | `{ employee_id }` (must be a member) or `{ employee_id: null }` |
 | `GET /api/audit-logs` (`?limit=&offset=`) | Admin | Max 1000 rows per request |
 | `GET /api/audit-logs/recent` | HR, Admin | |
 | `GET /api/live` | Public | Process is up (no DB). Use as the Render health check |
@@ -46,10 +55,11 @@ Node 18+, Express 5, mysql2 (connection pool with TLS, raw parameterised SQL), b
 | `DB_SSL_CA_PATH`, `DB_SSL_CA_BASE64` or `DB_SSL_CA` | yes for Aiven | The CA certificate as a file path, base64 of the PEM, or PEM text |
 | `JWT_SECRET` | yes | A long random string |
 | `JWT_EXPIRES_IN` | no | `8h` (default) |
-| `SEED_DEMO` | no | `true` loads the demo data in `npm run db:init`. Default off |
+| `SEED_DEMO` | no | `true` loads the demo data in `npm run db:init`. Default off: a new database starts empty |
+| `DEMO_MODE` | no | `true` = public demo (demo logins protected), `false` = real deployment (no protection). Unset = automatic: on when `SEED_DEMO=true`, otherwise the seeded demo logins are protected only if they exist |
 | `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_MIN` | no | Login/register/reset attempts per IP (default 10 per 15 min) |
 | `RESET_LINK_TTL_MINUTES` | no | Reset link lifetime (default 60) |
-| `DEMO_PROTECTED_EMAILS` | no | Comma-separated logins that can't be deleted, deactivated, re-roled, have their password changed/reset or lose their employee link (403). Default: the three demo logins. Empty value turns protection off |
+| `DEMO_PROTECTED_EMAILS` | no | Only in demo mode. Comma-separated logins that can't be deleted, deactivated, re-roled, have their password changed/reset or lose their employee link (403). Default: the three demo logins. Empty value turns protection off |
 | `ALLOWED_ORIGINS` | no | `https://emplocore.vercel.app,https://emplocore-*.vercel.app,http://localhost:3000` (default) |
 | `PORT` | no | Render sets this automatically |
 | `DB_SSL`, `DB_SSL_REJECT_UNAUTHORIZED`, `DB_CONNECTION_LIMIT`, `DB_PORT` | no | See `config/dbConfig.js` |
@@ -65,7 +75,9 @@ DB_URL='mysql://avnadmin:...@host:port/defaultdb?ssl-mode=REQUIRED' DB_SSL_CA_PA
 
 - `npm run db:init` applies `db/schema.sql` (idempotent) and then every pending file in `db/migrations/` (recorded in `schema_migrations`, each runs once). It is safe on every deploy.
 - Demo data (`db/seed.sql`) is loaded **only** when `SEED_DEMO=true` or with `npm run db:seed`. Deploys therefore never re-create demo accounts you deleted.
-- `npm run db:schema` = schema + migrations, never demo data. `node scripts/init-db.js --reset --yes` drops and recreates everything.
+- `npm run db:schema` / `npm run db:migrate` = schema + migrations, never demo data.
+- `npm run create-admin -- --email you@yourorg.org --name "Your Name"` creates the first admin of a new database (password from `ADMIN_PASSWORD` or a hidden prompt; never printed).
+- Migration `004_departments.sql` turns the old free-text `employees.Department` values into `departments` rows and links every employee through `employees.department_id`. The `Department` column stays as a copy of the name that the API keeps in sync, so older clients keep working; it can be dropped in a later migration. `node scripts/init-db.js --reset --yes` drops and recreates everything.
 - New schema change: add `db/migrations/NNN_description.sql` (next number). Never edit an applied migration.
 
 Demo logins exist only if demo data was loaded (`SEED_DEMO=true` / `npm run db:seed`). They are protected by `DEMO_PROTECTED_EMAILS` (see above) so a public demo stays usable; **set `DEMO_PROTECTED_EMAILS=` (empty) and then change or delete them before real use.**

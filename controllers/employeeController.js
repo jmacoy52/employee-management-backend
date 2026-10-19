@@ -3,6 +3,48 @@ const AuditLogModel = require('../models/auditLogModel');
 const UserModel = require('../models/userModel');
 const { pagination } = require('../config/pagination');
 const { isProtectedEmail, employeeProtection, sendDemoProtected } = require('../config/demoAccounts');
+const DepartmentModel = require('../models/departmentModel');
+
+// Works out the department for a create/update: department_id (preferred) or the older
+// free-text Department name, which is matched to an existing department or creates one.
+// Resolves { department_id, Department } or { status, error }.
+async function resolveDepartment(body, req) {
+  const rawId = body.department_id;
+  if (rawId !== undefined && rawId !== null && rawId !== '') {
+    const id = Number(rawId);
+    const department = Number.isInteger(id) ? await DepartmentModel.findById(id) : null;
+    if (!department) return { status: 400, error: 'Department not found' };
+    return { department };
+  }
+  const name = String(body.Department || '').trim().replace(/\s+/g, ' ');
+  if (!name) return { status: 400, error: 'Department is required' };
+  let department = await DepartmentModel.findByName(name);
+  if (!department) {
+    const id = await DepartmentModel.create({ name });
+    AuditLogModel.insertLog({ userId: req.user.id, actions: 'CREATE_DEPARTMENT', descriptions: `Department ${name} created by ${req.user.email}` },
+      (logErr) => { if (logErr) console.error('Failed to insert audit log:', logErr); });
+    department = await DepartmentModel.findById(id);
+  }
+  return { department };
+}
+
+// Like resolveDepartment, but a new employee cannot join a deactivated department
+async function departmentFor(body, req, currentDepartmentId) {
+  const outcome = await resolveDepartment(body, req);
+  if (outcome.error) return outcome;
+  const { department } = outcome;
+  if (!department.is_active && department.id !== currentDepartmentId) {
+    return { status: 409, error: `${department.name} is deactivated. Choose an active department.` };
+  }
+  return { department_id: department.id, Department: department.name };
+}
+
+// ?department_id=<id> or ?department_id=none
+function departmentFilter(value) {
+  if (value === 'none') return 'none';
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : undefined;
+}
 
 class EmployeeController {
   // Get all employees
@@ -23,18 +65,27 @@ class EmployeeController {
       });
 
       res.status(200).json(data);
-    }, pagination(req.query));
+    }, { ...pagination(req.query), departmentId: departmentFilter(req.query.department_id) });
   }
 
   // Create a new employee
-  static createEmployee(req, res) {
-    const { FullName, position, Department, salary, email } = req.body;
+  static async createEmployee(req, res) {
+    const { FullName, position, salary, email } = req.body;
 
-    if (!FullName || !position || !Department || !salary) {
+    if (!FullName || !position || (!req.body.Department && !req.body.department_id) || !salary) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const newEmployee = { FullName, position, Department, salary, email };
+    let department;
+    try {
+      department = await departmentFor(req.body, req);
+    } catch (err) {
+      console.error('Error resolving department:', err.message);
+      return res.status(500).json({ error: 'Failed to insert employee' });
+    }
+    if (department.error) return res.status(department.status).json({ error: department.error });
+
+    const newEmployee = { FullName, position, ...department, salary, email };
     Employee.insertEmployee(newEmployee, (err, result) => {
       if (err) {
         console.error('Error inserting employee:', err);
@@ -55,15 +106,27 @@ class EmployeeController {
   }
 
   // UPDATE an existing employee
-  static updateEmployee(req, res) {
+  static async updateEmployee(req, res) {
     const employeeId = req.params.id;
-    const { FullName, position, Department, salary } = req.body;
+    const { FullName, position, salary } = req.body;
 
-    if (!FullName || !position || !Department || !salary) {
+    if (!FullName || !position || (!req.body.Department && !req.body.department_id) || !salary) {
       return res.status(400).json({ error: 'All fields are required' });
     }
 
-    const updatedData = { FullName, position, Department, salary };
+    let department;
+    try {
+      const current = await new Promise((resolve, reject) =>
+        Employee.getEmployeeById(employeeId, (err, row) => (err ? reject(err) : resolve(row))));
+      if (!current) return res.status(404).json({ error: 'Employee not found' });
+      department = await departmentFor(req.body, req, current.department_id);
+    } catch (err) {
+      console.error('Error resolving department:', err.message);
+      return res.status(500).json({ error: 'Failed to update employee' });
+    }
+    if (department.error) return res.status(department.status).json({ error: department.error });
+
+    const updatedData = { FullName, position, ...department, salary };
 
     Employee.updateEmployee(employeeId, updatedData, (err, result) => {
       if (err) {
@@ -74,6 +137,10 @@ class EmployeeController {
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: 'Employee not found' });
       }
+
+      // Someone who moved to another department no longer heads their old one
+      DepartmentModel.clearHeadElsewhere(employeeId, department.department_id)
+        .catch((headErr) => console.error('Failed to clear head of department:', headErr.message));
 
       // Log this action
       AuditLogModel.insertLog({

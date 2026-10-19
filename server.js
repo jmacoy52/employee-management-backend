@@ -8,6 +8,7 @@ const { corsOptions } = require('./config/cors');
 const employeeRoutes = require('./routes/employeeRoute');
 const userRoutes = require('./routes/userRoute');
 const auditLogRoutes = require('./routes/auditLogRoute');
+const departmentRoutes = require('./routes/departmentRoute');
 
 if (!process.env.JWT_SECRET) {
   console.error('JWT_SECRET is not set. Logins will fail until it is configured.');
@@ -41,6 +42,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api', employeeRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
+app.use('/api/departments', departmentRoutes);
 
 // Home test route
 app.get('/', (req, res) => {

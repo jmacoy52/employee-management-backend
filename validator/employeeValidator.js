@@ -41,10 +41,17 @@ const employeeValidationSchema = {
     }
   },
 
+  // Either department_id (a departments row) or the older free-text Department name
+  department_id: {
+    optional: { options: { values: 'falsy' } },
+    isInt: {
+      options: { min: 1 },
+      errorMessage: 'department_id must be a department id',
+    }
+  },
+
   Department: {
-    notEmpty: {
-      errorMessage: 'Department is required',
-    },
+    optional: { options: { values: 'falsy' } },
     isLength: {
       options: { min: 2, max: 100 },
       errorMessage: 'Department must be between 2 and 100 characters',

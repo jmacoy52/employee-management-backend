@@ -22,7 +22,7 @@ const DB_DIR = path.join(__dirname, '..', 'db');
 
 // Demo data is loaded only when asked for, so a deploy never re-creates demo
 // accounts that were deleted or rotated in production.
-const SEED = !args.has('--schema-only') && (args.has('--seed') || String(process.env.SEED_DEMO).toLowerCase() === 'true');
+const shouldSeed = () => !args.has('--schema-only') && (args.has('--seed') || String(process.env.SEED_DEMO).toLowerCase() === 'true');
 
 async function main() {
   const config = buildDbConfig({ multipleStatements: true });
@@ -38,7 +38,7 @@ async function main() {
     if (args.has('--reset')) {
       if (!args.has('--yes')) throw new Error('--reset drops all EmploCore tables; add --yes to confirm.');
       console.log('Dropping tables...');
-      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, employees, user_profiles, users; SET FOREIGN_KEY_CHECKS = 1;');
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, departments, employees, user_profiles, users; SET FOREIGN_KEY_CHECKS = 1;');
     }
 
     console.log('Applying db/schema.sql');
@@ -46,7 +46,7 @@ async function main() {
 
     await runMigrations(conn);
 
-    if (SEED) {
+    if (shouldSeed()) {
       console.log('Applying db/seed.sql');
       await conn.query(fs.readFileSync(path.join(DB_DIR, 'seed.sql'), 'utf8'));
     } else {
@@ -54,10 +54,12 @@ async function main() {
     }
 
     const [counts] = await conn.query(
-      'SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM employees) AS employees, ' +
+      'SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM employees) AS employees, (SELECT COUNT(*) FROM departments) AS departments, ' +
       '(SELECT COUNT(*) FROM user_profiles) AS profiles, (SELECT COUNT(*) FROM audit_logs) AS audit_logs'
     );
     console.log('Done. Row counts:', counts[0]);
+    if (!counts[0].users) console.log('No user accounts yet. Create the first admin with: npm run create-admin -- --email you@example.org --name "Your Name"');
+    return counts[0];
   } finally {
     await conn.end();
   }

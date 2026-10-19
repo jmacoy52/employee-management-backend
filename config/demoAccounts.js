@@ -2,6 +2,12 @@
 // everyone else out: no delete, deactivate, role change, password change/reset or unlinking.
 //   DEMO_PROTECTED_EMAILS  comma-separated emails to protect (default: the three seeded demo logins).
 //                          Set it to an empty value to turn the protection off.
+//   DEMO_MODE              true  = public demo deployment: protection on
+//                          false = real deployment: protection off, whatever DEMO_PROTECTED_EMAILS says
+//                          unset = automatic (on when SEED_DEMO=true). The default list only names the
+//                          seeded demo logins, so it only ever matches when demo data was loaded; a
+//                          production database without demo data is unaffected. This keeps an existing
+//                          demo deployment protected without an env change.
 const db = require('./db');
 
 const DEFAULT_PROTECTED = [
@@ -12,7 +18,16 @@ const DEFAULT_PROTECTED = [
 
 const DEMO_PROTECTED_MESSAGE = "Demo accounts are protected and can't be changed.";
 
+// 'on' | 'off' | 'auto' (see the header)
+function demoMode() {
+  const mode = String(process.env.DEMO_MODE || '').trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].includes(mode)) return 'on';
+  if (['false', '0', 'no', 'off'].includes(mode)) return 'off';
+  return String(process.env.SEED_DEMO).toLowerCase() === 'true' ? 'on' : 'auto';
+}
+
 function protectedEmails() {
+  if (demoMode() === 'off') return [];
   const raw = process.env.DEMO_PROTECTED_EMAILS;
   const list = raw === undefined ? DEFAULT_PROTECTED : raw.split(',');
   return list.map((e) => e.trim().toLowerCase()).filter(Boolean);
@@ -58,6 +73,7 @@ function sendDemoProtected(res) {
 module.exports = {
   DEFAULT_PROTECTED,
   DEMO_PROTECTED_MESSAGE,
+  demoMode,
   protectedEmails,
   isProtectedEmail,
   isProtectedUserId,

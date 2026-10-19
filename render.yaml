@@ -22,3 +22,6 @@ services:
         value: https://emplocore.vercel.app,https://emplocore-*.vercel.app
       - key: SEED_DEMO
         value: "false"
+      # This service is the public portfolio demo; set "false" for a real deployment (docs/PRODUCTION.md)
+      - key: DEMO_MODE
+        value: "true"
