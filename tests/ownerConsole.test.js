@@ -15,7 +15,16 @@ const login = (email, password) => request(app).post('/api/users/login').send({ 
 const signup = (body) => request(app).post('/api/organizations/register').send({ ...ORG_DETAILS, ...body });
 const enquire = (body) => request(app).post('/api/enquiries').send(body);
 const P = (path) => `/api/platform${path}`;
-const logs = async (action) => (await conn.query('SELECT * FROM audit_logs WHERE actions = ? ORDER BY LogId', [action]))[0];
+// Audit entries are written just after the response is sent: wait briefly for them
+const logs = async (action) => {
+  let rows = [];
+  for (let i = 0; i < 20; i += 1) {
+    [rows] = await conn.query('SELECT * FROM audit_logs WHERE actions = ? ORDER BY LogId', [action]);
+    if (rows.length) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return rows;
+};
 const orgBySlug = async (slug) => (await conn.query('SELECT * FROM organizations WHERE slug = ?', [slug]))[0][0];
 
 before(async () => {
@@ -227,6 +236,5 @@ test('owner edits an organisation\'s sign-up details; fields left out are kept',
   assert.equal((await put({ name: 'Ho Bakery', size_range: '51-200', city: 'Ho' })).status, 200);
   const row = await orgBySlug('ho-bakery');
   assert.deepEqual([row.size_range, row.city, row.country, row.org_type, row.contact_name], ['51-200', 'Ho', 'Ghana', 'Private company', 'Ama Ho']);
-  await new Promise((r) => setTimeout(r, 100)); // audit entries are written after the response
   assert.match((await logs('UPDATE_ORGANIZATION')).slice(-1)[0].descriptions, /organisation details/);
 });

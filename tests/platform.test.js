@@ -14,7 +14,16 @@ const auth = (t) => ({ Authorization: `Bearer ${t}` });
 const login = (email, password) => request(app).post('/api/users/login').send({ email, password });
 const signup = (body) => request(app).post('/api/organizations/register').send({ ...ORG_DETAILS, ...body });
 const P = (path) => `/api/platform${path}`;
-const actions = async (action) => (await conn.query('SELECT * FROM audit_logs WHERE actions = ? ORDER BY LogId', [action]))[0];
+// Audit entries are written just after the response is sent: wait briefly for them
+const actions = async (action) => {
+  let rows = [];
+  for (let i = 0; i < 20; i += 1) {
+    [rows] = await conn.query('SELECT * FROM audit_logs WHERE actions = ? ORDER BY LogId', [action]);
+    if (rows.length) break;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  return rows;
+};
 
 before(async () => {
   await resetDatabase();
