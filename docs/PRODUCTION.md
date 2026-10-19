@@ -28,7 +28,8 @@ Never commit these values. `.env` is git-ignored; `.env.example` holds placehold
 ## 3. Create the tables (migrations)
 
 The Render build command (`npm install && npm run db:init`) creates the schema and applies every
-pending migration on each deploy. With `SEED_DEMO` unset, nothing else is inserted. To run it by hand
+pending migration on each deploy. With `SEED_DEMO` unset, nothing else is inserted (demo payroll is only
+added to a database that already holds the seeded demo data, and never with `DEMO_MODE=false`). To run it by hand
 from a trusted machine:
 
 ```bash
@@ -93,8 +94,11 @@ Redeploy the frontend after you change them, because `REACT_APP_*` values are ba
 - [ ] `ALLOWED_ORIGINS` lists only your frontend
 - [ ] Backups are on and one restore has been tested
 - [ ] Departments are set up (HR → Departments) before staff records are added
+- [ ] Payroll: the PAYE bands and SSNIT rates in `config/ghanaPayroll.js` are the ones in force (HR → Payroll → Tax rates shows them); add a new dated entry when GRA or SSNIT change them
 
 ## Switching an existing demo database to real use
 
 If you would rather keep the current database: set `DEMO_MODE=false`, redeploy, then as admin delete the
-three demo users, and as HR delete the sample employees and departments. A fresh database (above) is cleaner.
+three demo users, and as HR delete the sample employees and departments. The demo payslips stay with the
+demo organisation's payroll history (they cannot be deleted from the app once published). A fresh database
+(above) is cleaner.
