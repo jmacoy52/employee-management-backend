@@ -1,5 +1,5 @@
 const { checkSchema } = require("express-validator");
-const { ROLES, MIN_PASSWORD_LENGTH } = require("../config/roles");
+const { ROLES, passwordProblem } = require("../config/roles");
 
 // Import  UserModel to perform DB checks like email uniqueness
 const UserModel = require("../models/userModel");
@@ -32,11 +32,13 @@ const userValidationSchema = {
     },
   
     password: {
-      isLength: {
-        options: { min: MIN_PASSWORD_LENGTH },
-        errorMessage: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`,
+      custom: {
+        options: (value) => {
+          const problem = passwordProblem(value);
+          if (problem) throw new Error(problem);
+          return true;
+        }
       }
-      
     },
   
     role: {

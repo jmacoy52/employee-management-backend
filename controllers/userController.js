@@ -4,10 +4,30 @@ const UserModel = require('../models/userModel');
 const UserProfileModel = require('../models/userProfileModel');
 const db = require('../config/db');
 
+const crypto = require('crypto');
 const AuditLogModel = require('../models/auditLogModel');
-const { ROLES, PUBLIC_SIGNUP_ROLES, DEFAULT_ROLE, MIN_PASSWORD_LENGTH } = require('../config/roles');
+const PasswordResetModel = require('../models/passwordResetModel');
+const { ROLES, PUBLIC_SIGNUP_ROLES, DEFAULT_ROLE, passwordProblem } = require('../config/roles');
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+const RESET_LINK_TTL_MINUTES = Number(process.env.RESET_LINK_TTL_MINUTES) || 60;
+// Compared against when the email is unknown, so login takes the same time either way.
+const DUMMY_HASH = bcrypt.hashSync('timing-equaliser-not-a-real-password', 10);
+
+// Signs a JWT. "tv" (token_version) lets the server revoke tokens before they expire.
+function signToken(user) {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role, tv: user.token_version || 0 },
+    process.env.JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+}
+
+function audit(userId, actions, descriptions) {
+  AuditLogModel.insertLog({ userId, actions, descriptions }, (logErr) => {
+    if (logErr) console.error(`Failed to log ${actions}:`, logErr.message);
+  });
+}
 
 class UserController {
   // Register new user.
@@ -21,14 +41,15 @@ class UserController {
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Username, email and password are required' });
     }
-    if (String(password).length < MIN_PASSWORD_LENGTH) {
-      return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long` });
+    const problem = passwordProblem(password);
+    if (problem) {
+      return res.status(400).json({ error: problem });
     }
     if (!ROLES.includes(role)) {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${ROLES.join(', ')}` });
     }
     if (!isAdmin && !PUBLIC_SIGNUP_ROLES.includes(role)) {
-      return res.status(403).json({ error: 'Admin accounts can only be created by an existing admin.' });
+      return res.status(403).json({ error: 'HR and admin accounts can only be created by an existing admin.' });
     }
 
     try {
@@ -107,17 +128,16 @@ class UserController {
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
     try {
-      const user = await UserModel.findUserByEmail(email);
-      if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+      const user = await UserModel.findUserByEmail(String(email));
+      const passwordMatch = await bcrypt.compare(String(password), user ? user.password : DUMMY_HASH);
+      if (!user || !passwordMatch) return res.status(401).json({ error: 'Invalid credentials' });
 
-      const passwordMatch = await bcrypt.compare(password, user.password);
-      if (!passwordMatch) return res.status(401).json({ error: 'Invalid credentials' });
+      // Deactivated accounts cannot sign in (checked after the password so it reveals nothing to guessers)
+      if (!user.is_active) {
+        return res.status(403).json({ error: 'This account has been deactivated. Please contact an administrator.', code: 'ACCOUNT_DEACTIVATED' });
+      }
 
-      const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: JWT_EXPIRES_IN }
-      );
+      const token = signToken(user);
 
       // Log the login action
       AuditLogModel.insertLog({
@@ -131,7 +151,10 @@ class UserController {
       res.status(200).json({
         message: 'Login successful',
         token,
-        user: { id: user.id, username: user.username, email: user.email, role: user.role }
+        user: {
+          id: user.id, username: user.username, email: user.email, role: user.role,
+          mustChangePassword: Boolean(user.must_change_password)
+        }
       });
 
     } catch (err) {
@@ -141,7 +164,11 @@ class UserController {
   }
 
   static async getAllUsers(req, res) {
-    db.query('SELECT id, username, email, role, created_at FROM users ORDER BY id', (err, results) => {
+    const query = `SELECT u.id, u.username, u.email, u.role, u.is_active, u.must_change_password, u.created_at,
+        e.id AS employee_id, e.FullName AS employee_name
+      FROM users u LEFT JOIN employees e ON e.user_id = u.id
+      ORDER BY u.id`;
+    db.query(query, (err, results) => {
       if (err) return res.status(500).json({ error: 'Server error' });
       res.json(results);
     });
@@ -217,6 +244,188 @@ class UserController {
       }
 
       res.status(200).json({ message: 'Profile updated successfully' });
+    });
+  }
+
+  // Current account (used by the frontend to refresh the stored user)
+  static me(req, res) {
+    res.json(req.user);
+  }
+
+  // The employee record linked to the signed-in account, if any
+  static myEmployeeRecord(req, res) {
+    db.query('SELECT * FROM employees WHERE user_id = ?', [req.user.id], (err, rows) => {
+      if (err) {
+        console.error('Error fetching own employee record:', err);
+        return res.status(500).json({ error: 'Failed to fetch employee record' });
+      }
+      if (!rows.length) return res.status(404).json({ error: 'No employee record is linked to your account yet' });
+      res.json(rows[0]);
+    });
+  }
+
+  // Users HR/admin can link to an employee record (no passwords, no salary data)
+  static linkableUsers(req, res) {
+    const query = `SELECT u.id, u.username, u.email, u.role, e.id AS employee_id
+      FROM users u LEFT JOIN employees e ON e.user_id = u.id
+      ORDER BY u.username`;
+    db.query(query, (err, rows) => {
+      if (err) return res.status(500).json({ error: 'Server error' });
+      res.json(rows);
+    });
+  }
+
+  // Sign out everywhere: every token issued so far stops working
+  static logout(req, res) {
+    UserModel.bumpTokenVersion(req.user.id, (err) => {
+      if (err) {
+        console.error('Error during logout:', err.message);
+        return res.status(500).json({ error: 'Failed to sign out' });
+      }
+      audit(req.user.id, 'LOGOUT', `User ${req.user.email} signed out`);
+      res.json({ message: 'Signed out' });
+    });
+  }
+
+  // Change own password (also clears an admin-issued temporary password)
+  static async changePassword(req, res) {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new password are required' });
+    }
+    const problem = passwordProblem(newPassword);
+    if (problem) return res.status(400).json({ error: problem });
+    if (String(currentPassword) === String(newPassword)) {
+      return res.status(400).json({ error: 'New password must be different from the current one' });
+    }
+
+    try {
+      const user = await UserModel.findUserById(req.user.id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      const match = await bcrypt.compare(String(currentPassword), user.password);
+      if (!match) return res.status(400).json({ error: 'Current password is incorrect' });
+
+      const hashed = await bcrypt.hash(String(newPassword), 10);
+      UserModel.setPassword(user.id, hashed, false, (err) => {
+        if (err) {
+          console.error('Error changing password:', err.message);
+          return res.status(500).json({ error: 'Failed to change password' });
+        }
+        audit(user.id, 'CHANGE_PASSWORD', `User ${user.email} changed their password`);
+        // Other sessions are signed out; this one gets a fresh token
+        const token = signToken({ ...user, token_version: user.token_version + 1 });
+        res.json({
+          message: 'Password changed successfully',
+          token,
+          user: { id: user.id, username: user.username, email: user.email, role: user.role, mustChangePassword: false }
+        });
+      });
+    } catch (err) {
+      console.error('Error changing password:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+
+  // Activate / deactivate an account (Admin only)
+  static setUserStatus(req, res) {
+    const userId = req.params.id;
+    const { is_active } = req.body || {};
+    if (typeof is_active !== 'boolean') {
+      return res.status(400).json({ error: 'is_active must be true or false' });
+    }
+    if (String(userId) === String(req.user.id)) {
+      return res.status(400).json({ error: 'You cannot deactivate your own account' });
+    }
+    UserModel.setActive(userId, is_active, (err, result) => {
+      if (err) {
+        console.error('Error updating user status:', err.message);
+        return res.status(500).json({ error: 'Failed to update user status' });
+      }
+      if (result.affectedRows === 0) return res.status(404).json({ error: 'User not found' });
+      audit(req.user.id, is_active ? 'ACTIVATE_USER' : 'DEACTIVATE_USER',
+        `User ${userId} ${is_active ? 'activated' : 'deactivated'} by ${req.user.email}`);
+      res.json({ message: is_active ? 'User activated' : 'User deactivated' });
+    });
+  }
+
+  // Admin sets a temporary password. The user must change it at next sign-in.
+  // If no password is sent, a random one is generated and returned once.
+  static async setTemporaryPassword(req, res) {
+    const userId = req.params.id;
+    if (String(userId) === String(req.user.id)) {
+      return res.status(400).json({ error: 'Use Change Password for your own account' });
+    }
+    const supplied = req.body && req.body.password;
+    const tempPassword = supplied ? String(supplied) : `Tmp-${crypto.randomBytes(6).toString('base64url')}9`;
+    const problem = passwordProblem(tempPassword);
+    if (problem) return res.status(400).json({ error: problem });
+
+    try {
+      const user = await UserModel.findUserById(userId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      const hashed = await bcrypt.hash(tempPassword, 10);
+      UserModel.setPassword(user.id, hashed, true, (err) => {
+        if (err) {
+          console.error('Error setting temporary password:', err.message);
+          return res.status(500).json({ error: 'Failed to reset password' });
+        }
+        audit(req.user.id, 'RESET_PASSWORD', `Temporary password issued for user ${user.id} by ${req.user.email}`);
+        res.json({
+          message: 'Temporary password set. The user must change it at next sign-in.',
+          ...(supplied ? {} : { temporaryPassword: tempPassword })
+        });
+      });
+    } catch (err) {
+      console.error('Error setting temporary password:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+
+  // Admin generates a one-time reset link (no email is sent; the admin shares it)
+  static async createResetLink(req, res) {
+    const userId = req.params.id;
+    try {
+      const user = await UserModel.findUserById(userId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      if (!user.is_active) return res.status(400).json({ error: 'Activate the account before resetting its password' });
+      PasswordResetModel.create(user.id, req.user.id, RESET_LINK_TTL_MINUTES, (err, data) => {
+        if (err) {
+          console.error('Error creating reset link:', err.message);
+          return res.status(500).json({ error: 'Failed to create reset link' });
+        }
+        audit(req.user.id, 'RESET_LINK_CREATED', `Password reset link created for user ${user.id} by ${req.user.email}`);
+        res.status(201).json({ token: data.token, expiresAt: data.expiresAt });
+      });
+    } catch (err) {
+      console.error('Error creating reset link:', err);
+      res.status(500).json({ error: 'Server error' });
+    }
+  }
+
+  // Public: set a new password with a one-time reset token
+  static resetPasswordWithToken(req, res) {
+    const { token, newPassword } = req.body || {};
+    if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password are required' });
+    const problem = passwordProblem(newPassword);
+    if (problem) return res.status(400).json({ error: problem });
+
+    PasswordResetModel.findValid(token, async (err, row) => {
+      if (err) return res.status(500).json({ error: 'Server error' });
+      if (!row || !row.is_active) return res.status(400).json({ error: 'This reset link is invalid or has expired' });
+      PasswordResetModel.markUsed(row.id, async (useErr, used) => {
+        if (useErr) return res.status(500).json({ error: 'Server error' });
+        if (used.affectedRows === 0) return res.status(400).json({ error: 'This reset link is invalid or has expired' });
+        try {
+          const hashed = await bcrypt.hash(String(newPassword), 10);
+          UserModel.setPassword(row.user_id, hashed, false, (setErr) => {
+            if (setErr) return res.status(500).json({ error: 'Failed to reset password' });
+            audit(row.user_id, 'RESET_PASSWORD', `User ${row.user_id} reset their password with a reset link`);
+            res.json({ message: 'Password has been reset. You can now sign in.' });
+          });
+        } catch (hashErr) {
+          res.status(500).json({ error: 'Server error' });
+        }
+      });
     });
   }
 }
