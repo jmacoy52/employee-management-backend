@@ -22,6 +22,7 @@ yarn-error.log*
 *.sqlite
 *.sql
 !db/*.sql
+!db/migrations/*.sql
 *.db
 
 # IDE specific files
