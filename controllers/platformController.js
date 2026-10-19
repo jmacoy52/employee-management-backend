@@ -12,6 +12,8 @@ const { pagination } = require('../config/pagination');
 const EnquiryModel = require('../models/enquiryModel');
 const { ORG_TYPES, SIZE_RANGES, PHONE_RE } = require('../config/signupOptions');
 const { signToken } = require('./userController');
+const billing = require('../services/billing');
+const { TRIAL_DAYS } = require('../config/billing');
 
 const pool = db.promise();
 const { STATUSES } = OrganizationModel;
@@ -119,7 +121,9 @@ class PlatformController {
     const status = req.query.status && STATUSES.includes(req.query.status) ? req.query.status : undefined;
     const q = String(req.query.q || '').trim().slice(0, 100) || undefined;
     try {
-      res.json(await OrganizationModel.list({ status, q, ...pagination(req.query) }));
+      const rows = await OrganizationModel.list({ status, q, ...pagination(req.query) });
+      const subs = await billing.subscriptionSummaries(rows.map((r) => r.id));
+      res.json(rows.map((r) => ({ ...r, subscription: subs[r.id] || null })));
     } catch (err) {
       serverError(res, 'list organisations', err);
     }
@@ -133,8 +137,8 @@ class PlatformController {
       if (!org) return res.status(404).json({ error: 'Organisation not found' });
       // Tenant boundary: the owner sees the organisation's admin account(s) and head counts by
       // role, never the names or e-mails of its HR and employee accounts
-      const [admins, userCounts] = await Promise.all([OrganizationModel.admins(id), OrganizationModel.userCounts(id)]);
-      res.json({ ...org, admins, user_counts: userCounts });
+      const [admins, userCounts, subscription] = await Promise.all([OrganizationModel.admins(id), OrganizationModel.userCounts(id), billing.organisationBilling(id)]);
+      res.json({ ...org, admins, user_counts: userCounts, subscription });
     } catch (err) {
       serverError(res, 'load the organisation', err);
     }
@@ -160,7 +164,7 @@ class PlatformController {
       const [taken] = await pool.query('SELECT id FROM users WHERE email = ?', [adminEmail]);
       if (taken.length) return res.status(409).json({ error: 'An account with that admin e-mail already exists' });
       const org = await createOrganisationWithAdmin({
-        name: fields.name, status, plan: fields.plan, seatLimit: fields.seatLimit,
+        name: fields.name, status, plan: 'growth', seatLimit: fields.seatLimit,
         contactEmail: fields.contactEmail || adminEmail,
         details: { ...fields.details, contactName: fields.details.contactName || adminName },
         admin: { username: adminName, email: adminEmail, password: await bcrypt.hash(password, 10), mustChangePassword: !supplied },
@@ -183,6 +187,8 @@ class PlatformController {
       if (!before) return res.status(404).json({ error: 'Organisation not found' });
       const keep = { orgType: 'org_type', sizeRange: 'size_range', country: 'country', city: 'city', phone: 'phone', contactName: 'contact_name' };
       for (const [key, col] of Object.entries(keep)) if (fields.details[key] === undefined) fields.details[key] = before[col] || null;
+      // The plan is managed by the subscription (Billing actions), not by this form
+      fields.plan = before.plan;
       await OrganizationModel.update(id, fields);
       const changes = [];
       if (before.name !== fields.name) changes.push(`name "${before.name}" -> "${fields.name}"`);
@@ -223,6 +229,14 @@ class PlatformController {
         const reason = action === 'reject' ? String((req.body && req.body.reason) || '').trim().replace(/\s+/g, ' ') : '';
         if (reason.length > 500) return res.status(400).json({ error: 'Reason must be at most 500 characters' });
         await OrganizationModel.setStatus(id, rules.to, { reason: reason || null, review: rules.review });
+        if (action === 'approve') {
+          // The 30-day Growth trial starts when the organisation can first sign in
+          await billing.ensureSubscription(id);
+          await pool.query(
+            "UPDATE organization_subscriptions SET trial_ends_at = UTC_TIMESTAMP() + INTERVAL ? DAY WHERE organization_id = ? AND status = 'trialing' AND trial_ends_at IS NULL",
+            [TRIAL_DAYS, id]
+          );
+        }
         audit(req, id, rules.log, `Organisation ${org.name} ${rules.done} by ${req.user.email}${reason ? `: ${reason}` : ''}`);
         res.json({ message: `Organisation ${rules.done}`, status: rules.to });
       } catch (err) {

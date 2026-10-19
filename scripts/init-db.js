@@ -39,7 +39,7 @@ async function main() {
     if (args.has('--reset')) {
       if (!args.has('--yes')) throw new Error('--reset drops all EmploCore tables; add --yes to confirm.');
       console.log('Dropping tables...');
-      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, departments, employees, user_profiles, users, organizations, enquiries, employee_pay_items, employee_pay_details, payslips, payroll_runs; SET FOREIGN_KEY_CHECKS = 1;');
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, departments, employees, user_profiles, users, organizations, enquiries, employee_pay_items, employee_pay_details, payslips, payroll_runs, billing_job_runs, billing_notices, billing_coupon_redemptions, billing_coupons, billing_events, billing_payments, billing_checkouts, organization_subscriptions, plans; SET FOREIGN_KEY_CHECKS = 1;');
     }
 
     console.log('Applying db/schema.sql');

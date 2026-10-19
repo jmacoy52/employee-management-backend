@@ -13,6 +13,8 @@ const organizationRoutes = require('./routes/organizationRoute');
 const platformRoutes = require('./routes/platformRoute');
 const enquiryRoutes = require('./routes/enquiryRoute');
 const payrollRoutes = require('./routes/payrollRoute');
+const billingRoutes = require('./routes/billingRoute');
+const BillingController = require('./controllers/billingController');
 
 if (!process.env.JWT_SECRET) {
   console.error('JWT_SECRET is not set. Logins will fail until it is configured.');
@@ -24,6 +26,9 @@ const PORT = process.env.PORT || 5000;
 app.set('trust proxy', 1); // behind Render's proxy
 app.use(helmet());
 app.use(cors(corsOptions));
+// Paystack webhook: the signature is an HMAC of the exact bytes received, so this route reads the raw body
+// and is registered before the JSON parser.
+app.post('/api/billing/paystack/webhook', express.raw({ type: '*/*', limit: '200kb' }), BillingController.webhook);
 app.use(express.json({ limit: '100kb' }));
 
 // Liveness check: the process is up (no database call). Use as Render's health check path
@@ -51,6 +56,7 @@ app.use('/api/organizations', organizationRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/enquiries', enquiryRoutes);
 app.use('/api/payroll', payrollRoutes);
+app.use('/api/billing', billingRoutes);
 
 // Home test route
 app.get('/', (req, res) => {

@@ -25,3 +25,31 @@ services:
       # This service is the public portfolio demo; set "false" for a real deployment (docs/PRODUCTION.md)
       - key: DEMO_MODE
         value: "true"
+      # Subscriptions (docs/PAYSTACK_SETUP.md). Leave the Paystack keys unset until you are ready: the billing page
+      # then shows "Payments coming soon" and nothing else changes.
+      - key: PAYSTACK_SECRET_KEY
+        sync: false
+      - key: PAYSTACK_PUBLIC_KEY
+        sync: false
+      - key: APP_URL
+        value: https://emplocore.vercel.app
+
+  # Daily billing job: trial and renewal reminders, trial expiry, grace periods, downgrades to Free and
+  # reconciliation with Paystack. Runs at 06:00 UTC (06:00 in Accra). Safe to run twice (named lock + conditional
+  # updates). Uses the same database as the web service; migrations are applied by the web service's build.
+  - type: cron
+    name: emplocore-billing-daily
+    runtime: node
+    branch: v1/aiven-production
+    schedule: "0 6 * * *"
+    buildCommand: npm install
+    startCommand: npm run billing:daily
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DB_URL
+        sync: false
+      - key: DB_SSL_CA_BASE64
+        sync: false
+      - key: PAYSTACK_SECRET_KEY
+        sync: false

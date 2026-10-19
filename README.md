@@ -84,6 +84,16 @@ Migration `007_payroll.sql` adds `employee_pay_details`, `employee_pay_items`, `
 - **PDF:** generated on the server with `pdfkit` (Inter embedded from `@fontsource/inter`), built from the stored snapshot after the same access checks as the JSON view. The bank account is masked to its last four digits.
 - **Demo payroll:** `scripts/seed-payroll-demo.js` gives the demo employees pay details and published payslips for August 2026 (old bands) and September 2026 (Act 1178 bands). `db:init` runs it with `SEED_DEMO=true`, and also on a deployment that already has the seeded demo data (the `demo` organisation with the demo HR login and `@emplocore.demo` employees) but no payroll yet, unless `DEMO_MODE=false` (the same rule as the demo-account protection). A database without the demo data is never touched. It is idempotent and only touches the `demo` organisation's `@emplocore.demo` employees. `SEED_DEMO_PAYROLL=false` turns off the second case. In demo mode the demo employee's (Kwame Mensah's) pay details are protected, so the demo login's payslips stay as shown.
 
+## Subscriptions and billing
+
+Migration `009_subscriptions.sql` adds plans (seeded: Free, Starter GHS 99, Growth GHS 249, Business GHS 549, Enterprise custom; the owner edits them in the console), one subscription per organisation, checkouts, payments with invoice numbers, webhook events, the founding coupon (40% off for 12 months, first 25 paying organisations) and in-app notices.
+
+- New organisations get a **30-day Growth trial** (no card). A failed or ended payment gives a **7-day grace period**, then **Free**. Data is never deleted; data over a limit is read-only and new employees over the cap are blocked.
+- **Paystack**: `POST /api/billing/checkout` (admin) → Paystack checkout → `/admin/billing/callback` → `POST /api/billing/verify` (server-side verification). Webhook `POST /api/billing/paystack/webhook` checks `x-paystack-signature` (HMAC SHA-512 of the raw body) and stores every event once (idempotent).
+- **Daily job** `npm run billing:daily` (Render cron `emplocore-billing-daily`, 06:00 UTC): reminders, trial end, grace, downgrade, Paystack reconciliation. Safe to run twice.
+- Without `PAYSTACK_SECRET_KEY` nothing breaks: admins see "Payments coming soon, contact us". To switch payments on, follow [`docs/PAYSTACK_SETUP.md`](docs/PAYSTACK_SETUP.md).
+- The demo organisation stays on Growth and is exempt from billing.
+
 ## Environment variables
 
 | Name | Required | Format / example |
@@ -98,6 +108,9 @@ Migration `007_payroll.sql` adds `employee_pay_details`, `employee_pay_items`, `
 | `RESET_LINK_TTL_MINUTES` | no | Reset link lifetime (default 60) |
 | `DEMO_PROTECTED_EMAILS` | no | Only in demo mode. Comma-separated logins that can't be deleted, deactivated, re-roled, have their password changed/reset or lose their employee link (403). Default: the three demo logins. Empty value turns protection off |
 | `ALLOWED_ORIGINS` | no | `https://emplocore.vercel.app,https://emplocore-*.vercel.app,http://localhost:3000` (default) |
+| `PAYSTACK_SECRET_KEY` | for payments | Paystack secret key (`sk_live_…`). Unset = payments off |
+| `PAYSTACK_PUBLIC_KEY` | no | Paystack public key (`pk_live_…`) |
+| `APP_URL` | no | Frontend URL for the payment callback (default `https://emplocore.vercel.app`) |
 | `PORT` | no | Render sets this automatically |
 | `DB_SSL`, `DB_SSL_REJECT_UNAUTHORIZED`, `DB_CONNECTION_LIMIT`, `DB_PORT` | no | See `config/dbConfig.js` |
 

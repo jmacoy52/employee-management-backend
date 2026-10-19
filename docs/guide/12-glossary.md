@@ -16,7 +16,9 @@
 | **Employee record** | HR's data about a person (`employees` row): position, department, salary. May be linked to an account |
 | **Enquiry** | A "Request a demo" message from the contact page, handled in the owner console |
 | **GRA** | Ghana Revenue Authority, which sets PAYE rates |
-| **Grace period** | (Proposed billing) time after a failed payment or trial end before downgrade or suspension |
+| **Grace period** | 7 days after a failed or ended payment during which the plan keeps working; then the organisation moves to Free (data kept) |
+| **MRR** | Monthly recurring revenue: active paid subscriptions (yearly ÷ 12) plus agreed monthly prices of owner-assigned plans |
+| **Trial** | 30 days of Growth for every new organisation, no card needed |
 | **Gross pay** | Basic salary plus allowances |
 | **Head of department** | The member of a department chosen as its head (`departments.head_employee_id`) |
 | **Helmet** | Express middleware that sets HTTP security headers |

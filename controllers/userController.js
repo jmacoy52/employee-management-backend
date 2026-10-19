@@ -11,6 +11,8 @@ const { ROLES, DEFAULT_ROLE, OWNER_ROLE, passwordProblem, ownerPasswordProblem }
 const { isProtectedEmail, isProtectedUserId, sendDemoProtected } = require('../config/demoAccounts');
 const OrganizationModel = require('../models/organizationModel');
 const { organisationBlock } = require('../middleware/authMiddleware');
+const { assertRoleCapacity } = require('../services/billing');
+const pool = db.promise();
 const { ANY_ORG } = UserModel;
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
@@ -120,7 +122,7 @@ class UserController {
       res.status(201).json({ message: 'User registered successfully', userId: newUserId });
 
     } catch (err) {
-      if (err.code === 'SEAT_LIMIT_REACHED') return res.status(409).json({ error: err.message, code: err.code });
+      if (['SEAT_LIMIT_REACHED', 'PLAN_LIMIT_REACHED'].includes(err.code)) return res.status(409).json({ error: err.message, code: err.code });
       if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Email already exists' });
       console.error('Error during registration:', err);
       return res.status(500).json({ error: 'Server error' });
@@ -143,6 +145,22 @@ class UserController {
       const target = await UserModel.findUserInScope(userId, scopeOf(req));
       if (!target) return res.status(404).json({ error: 'User not found' });
       if (isProtectedEmail(target.email)) return sendDemoProtected(res);
+      // Promoting an active account to admin or HR uses one of the plan's admin/HR places
+      if (target.is_active && target.role !== role && ['admin', 'hr'].includes(role)) {
+        const conn = await pool.getConnection();
+        try {
+          await conn.beginTransaction();
+          await conn.query('SELECT id FROM organizations WHERE id = ? FOR UPDATE', [target.organization_id]);
+          await assertRoleCapacity(conn, target.organization_id, role, { excludeUserId: target.id });
+          await conn.commit();
+        } catch (limitErr) {
+          await conn.rollback();
+          if (limitErr.code === 'PLAN_LIMIT_REACHED') return res.status(409).json({ error: limitErr.message, code: limitErr.code });
+          throw limitErr;
+        } finally {
+          conn.release();
+        }
+      }
     } catch (err) {
       return res.status(500).json({ error: 'Server error' });
     }
@@ -423,7 +441,7 @@ class UserController {
       try {
         return done(await OrganizationModel.activateUser(target.organization_id, target.id));
       } catch (err) {
-        if (err.code === 'SEAT_LIMIT_REACHED') return res.status(409).json({ error: err.message, code: err.code });
+        if (['SEAT_LIMIT_REACHED', 'PLAN_LIMIT_REACHED'].includes(err.code)) return res.status(409).json({ error: err.message, code: err.code });
         console.error('Error updating user status:', err.message);
         return res.status(500).json({ error: 'Failed to update user status' });
       }

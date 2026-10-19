@@ -10,6 +10,8 @@
 INSERT IGNORE INTO organizations (name, slug, status, approved_at) VALUES
   ('EmploCore Demo', 'demo', 'active', CURRENT_TIMESTAMP);
 SET @demo_org_id = (SELECT id FROM organizations WHERE slug = 'demo');
+-- The demo organisation is exempt from billing and stays on Growth (migration 009)
+INSERT IGNORE INTO organization_subscriptions (organization_id, plan_code, status, billing_mode) VALUES (@demo_org_id, 'growth', 'active', 'exempt');
 
 INSERT IGNORE INTO users (organization_id, username, email, password, role) VALUES
   (@demo_org_id, 'Nana Agyeman',  'admin@emplocore.demo',        '$2b$10$5dG55g0EtXLHJplQug.tlORup3nPLTK5fXtQSZJiNQUOnZ1zm/sA6', 'admin'),

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const PlatformController = require('../controllers/platformController');
+const PlatformBillingController = require('../controllers/platformBillingController');
 const UserController = require('../controllers/userController');
 const { authenticateToken, authorizeOwner } = require('../middleware/authMiddleware');
 const { orgSignupLimiter } = require('../config/rateLimits');
@@ -32,6 +33,18 @@ router.get('/admins', PlatformController.listAdmins);
 router.put('/admins/:id/status', PlatformController.requireOrgAdminTarget, UserController.setUserStatus);
 router.post('/admins/:id/temporary-password', PlatformController.requireOrgAdminTarget, UserController.setTemporaryPassword);
 router.post('/admins/:id/reset-link', PlatformController.requireOrgAdminTarget, UserController.createResetLink);
+
+// Subscriptions: revenue overview, plans (prices and limits, no code change needed), discounts and
+// per-organisation actions. All changes are audit-logged with scope 'platform'.
+router.get('/billing', PlatformBillingController.revenue);
+router.get('/plans', PlatformBillingController.plans);
+router.put('/plans/:code', PlatformBillingController.updatePlan);
+router.get('/coupons', PlatformBillingController.coupons);
+router.put('/coupons/:code', PlatformBillingController.updateCoupon);
+router.get('/organizations/:id/subscription', PlatformBillingController.subscription);
+router.post('/organizations/:id/subscription/extend-trial', PlatformBillingController.extendTrial);
+router.post('/organizations/:id/subscription/assign', PlatformBillingController.assignPlan);
+router.post('/organizations/:id/subscription/founding-discount', PlatformBillingController.foundingDiscount);
 
 // Platform-level audit log: owner actions and organisation-level events only (scope 'platform')
 router.get('/audit-logs', PlatformController.auditLogs);

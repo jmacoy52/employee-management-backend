@@ -1,5 +1,6 @@
 const db = require('../config/db');
 const { slugify, uniqueSlug } = require('../config/slug');
+const { assertRoleCapacity } = require('../services/billing');
 
 // Organisations (tenants), migration 005. Promise-based raw SQL through the shared mysql2 pool.
 const pool = db.promise();
@@ -50,7 +51,7 @@ class OrganizationModel {
     const c = conn || (await pool.getConnection());
     try {
       if (own) await c.beginTransaction();
-      await OrganizationModel.lockSeat(c, organizationId);
+      await OrganizationModel.lockSeat(c, organizationId, user.role);
       const [result] = await c.query(
         'INSERT INTO users (organization_id, username, email, password, role, must_change_password) VALUES (?, ?, ?, ?, ?, ?)',
         [organizationId, user.username, user.email, user.password, user.role, user.mustChangePassword ? 1 : 0]
@@ -65,11 +66,13 @@ class OrganizationModel {
     }
   }
 
-  // Throws SeatLimitError when one more active account would exceed the limit. Locks the
-  // organisation row until the surrounding transaction ends.
-  static async lockSeat(conn, organizationId) {
+  // Throws SeatLimitError when one more active account would exceed the limit, and a 409 PLAN_LIMIT_REACHED
+  // when the plan's admin/HR allowance is used up (role given). Locks the organisation row until the
+  // surrounding transaction ends.
+  static async lockSeat(conn, organizationId, role = null) {
     const [[org]] = await conn.query('SELECT seat_limit FROM organizations WHERE id = ? FOR UPDATE', [organizationId]);
     if (!org) throw Object.assign(new Error('Organisation not found'), { status: 404 });
+    if (role) await assertRoleCapacity(conn, organizationId, role);
     if (org.seat_limit === null) return;
     const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM users WHERE organization_id = ? AND is_active = 1', [organizationId]);
     if (n >= org.seat_limit) throw new SeatLimitError(org.seat_limit);
@@ -80,9 +83,9 @@ class OrganizationModel {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
-      const [[user]] = await conn.query('SELECT is_active FROM users WHERE id = ? AND organization_id = ? FOR UPDATE', [userId, organizationId]);
+      const [[user]] = await conn.query('SELECT is_active, role FROM users WHERE id = ? AND organization_id = ? FOR UPDATE', [userId, organizationId]);
       if (!user) { await conn.rollback(); return 0; }
-      if (!user.is_active) await OrganizationModel.lockSeat(conn, organizationId);
+      if (!user.is_active) await OrganizationModel.lockSeat(conn, organizationId, user.role);
       const [result] = await conn.query('UPDATE users SET is_active = 1 WHERE id = ? AND organization_id = ?', [userId, organizationId]);
       await conn.commit();
       return result.affectedRows;

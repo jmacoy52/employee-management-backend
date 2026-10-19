@@ -11,7 +11,8 @@
     "db:migrate": "node scripts/init-db.js --schema-only",
     "create-admin": "node scripts/create-admin.js",
     "create-owner": "node scripts/create-owner.js",
-    "test": "node --test --test-concurrency=1"
+    "test": "node --test --test-concurrency=1",
+    "billing:daily": "node scripts/billing-daily.js"
   },
   "keywords": [],
   "author": "",

@@ -16,7 +16,7 @@ test('migrations upgrade a populated v1 database without data loss and are idemp
   await conn.query("INSERT INTO audit_logs (UserId, actions, descriptions) VALUES (?, 'LOGIN', 'User Old Admin logged in'), (?, 'CREATE_ADMIN', 'First admin created'), (?, 'CREATE_EMPLOYEE', 'Employee added')", [oldAdmin.id, oldAdmin.id, oldAdmin.id]);
   const [[before]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   const ran = await runMigrations(conn, { log: () => {} });
-  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql', '006_org_signup_details_enquiries.sql', '007_payroll.sql', '008_audit_scope_last_login.sql']);
+  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql', '006_org_signup_details_enquiries.sql', '007_payroll.sql', '008_audit_scope_last_login.sql', '009_subscriptions.sql']);
   const [[afterCounts]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   assert.deepEqual(afterCounts, before);
   const [[flags]] = await conn.query('SELECT MIN(is_active) a, MAX(token_version) v, MAX(must_change_password) m FROM users');
@@ -49,6 +49,13 @@ test('migrations upgrade a populated v1 database without data loss and are idemp
   assert.deepEqual(scoped.map((r) => [r.actions, r.scope]), [['LOGIN', 'tenant'], ['CREATE_ADMIN', 'platform'], ['CREATE_EMPLOYEE', 'tenant']]);
   const [[lastLogin]] = await conn.query('SELECT last_login_at FROM users WHERE id = ?', [oldAdmin.id]);
   assert.ok(lastLogin.last_login_at); // backfilled from the LOGIN entry
+  // 009: the demo organisation is on Growth, exempt from billing; plans and the founding discount are seeded
+  const [[demoSub]] = await conn.query('SELECT plan_code, status, billing_mode, trial_ends_at FROM organization_subscriptions WHERE organization_id = ?', [orgs[0].id]);
+  assert.deepEqual({ ...demoSub }, { plan_code: 'growth', status: 'active', billing_mode: 'exempt', trial_ends_at: null });
+  const [plans] = await conn.query('SELECT code, price_monthly_pesewas FROM plans ORDER BY sort_order');
+  assert.deepEqual(plans.map((p) => [p.code, p.price_monthly_pesewas]), [['free', 0], ['starter', 9900], ['growth', 24900], ['business', 54900], ['enterprise', null]]);
+  const [[coupon]] = await conn.query("SELECT percent_off, duration_months, max_redemptions, is_active FROM billing_coupons WHERE code = 'FOUNDING40'");
+  assert.deepEqual({ ...coupon }, { percent_off: 40, duration_months: 12, max_redemptions: 25, is_active: 1 });
   assert.deepEqual(await runMigrations(conn, { log: () => {} }), []);
 });
 

@@ -55,6 +55,9 @@ owner only. The owner is refused by the organisation guards.
 | Create accounts (`POST /api/users/register`) | – | any role | employee only | – | – (403 `SELF_SIGNUP_CLOSED`) |
 | List, re-role, activate/deactivate, reset, delete users | – | ✓ (own org) | – | – | – |
 | Organisation audit log (`/api/audit-logs`, `/recent`) | – | ✓ (own org, all scopes) | 403 | 403 | – |
+| Billing: plan, payments, invoices, checkout, cancel (`/api/billing`) | – | ✓ (own org) | 403 | 403 | – |
+| Plan status for banners (`GET /api/billing/status`) | – | ✓ | ✓ | ✓ | – |
+| Plans and prices (`GET /api/billing/plans`) | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Register an organisation (`POST /api/organizations/register`) | – | – | – | – | ✓ (pending) |
 | Request a demo (`POST /api/enquiries`) | – | – | – | – | ✓ |
 | Owner console (`/api/platform/*`) | ✓ | 403 | 403 | 403 | 401 |
@@ -136,6 +139,26 @@ several instances (see [Scalability](08-scalability.md)).
 
 Hashes: bcrypt cost 10 for organisation users, 12 for the owner. Temporary passwords are random
 (`crypto.randomBytes`) and must be changed at the next sign-in.
+
+## Billing and payments
+
+- **Webhook** `POST /api/billing/paystack/webhook` is mounted before the JSON parser so the **raw
+  body** can be checked: `x-paystack-signature` must equal HMAC SHA-512 of the raw body with
+  `PAYSTACK_SECRET_KEY` (compared in constant time). Otherwise 401. Without a key, 503.
+- **Idempotent**: each event is stored once in `billing_events` by a unique key; repeats are ignored.
+  Stored payloads drop card authorisation codes.
+- **Server-side verification**: a plan is only activated after `GET /transaction/verify` with
+  Paystack confirms success, the expected amount and currency GHS, for a checkout reference that
+  belongs to the same organisation. The callback page cannot activate anything by itself.
+- **Tenant isolation**: billing queries always use the signed-in admin's `organization_id`;
+  invoices and payments of another organisation return 404. Only admins manage billing.
+- **Plan limits** (`middleware/planGuards.js`, `OrganizationModel.lockSeat`): creating employees over
+  the cap → 409 `PLAN_LIMIT_REACHED`; editing records while over the cap → 409 `PLAN_OVER_LIMIT`;
+  payroll changes and the audit log on a plan without them → 403 `PLAN_FEATURE_UNAVAILABLE`; extra
+  admin/HR accounts → 409 `PLAN_LIMIT_REACHED`. Data is never deleted.
+- **Owner actions** on subscriptions are logged with `scope = platform`; the exempt demo organisation
+  refuses them (403 `BILLING_EXEMPT`).
+- Paystack keys are environment variables only (never in the repository or the frontend).
 
 ## Audit logging
 

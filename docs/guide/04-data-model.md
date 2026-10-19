@@ -89,7 +89,7 @@ erDiagram
 |---|---|
 | `id`, `name`, `slug` | Identity. `slug` is unique and URL-safe (`config/slug.js`) |
 | `status` | `pending` (awaiting approval, no sign-in), `active`, `suspended` (sign-in and sessions refused, data kept), `rejected` (registration declined) |
-| `plan`, `seat_limit` | Commercial fields. `seat_limit` = maximum **active** user accounts (`NULL` = no limit); enforced when accounts are created or reactivated (`SEAT_LIMIT_REACHED`, 409). No billing code yet |
+| `plan`, `seat_limit` | Commercial fields. `seat_limit` = maximum **active** user accounts (`NULL` = no limit); enforced when accounts are created or reactivated (`SEAT_LIMIT_REACHED`, 409). `plan` mirrors the subscription's plan (`organization_subscriptions.plan_code`, migration 009) |
 | `contact_email`, `contact_name`, `phone`, `org_type`, `size_range`, `country`, `city` | Sign-up details (006) |
 | `rejection_reason`, `reviewed_at`, `approved_at` | Owner review |
 | `created_at`, `updated_at` | Timestamps |
@@ -155,12 +155,25 @@ invalidates older ones.
 | `payroll_runs` | One per organisation and month (`period` `YYYY-MM`, unique per organisation, checked by a regex constraint), with `pay_date` |
 | `payslips` | One per employee and month: a **snapshot** of the employee details, every amount (`basic_pesewas` ... `net_pesewas`, `ssnit_employer_pesewas`) and, in `line_items` (JSON), the allowance and deduction lines, the PAYE bands used and the rules applied. `status` `draft` -> `published`. `reference` is unique (e.g. `PS-202609-4K7Q2M`). If the employee record is deleted, `employee_id` becomes `NULL` and the payslip stays |
 
+### Subscription and billing tables (009)
+
+| Table | Purpose |
+|---|---|
+| `plans` | The price list (primary key `code`: `free`, `starter`, `growth`, `business`, `enterprise`): monthly and yearly price, employees included, extra-employee price (pesewas), admin/HR limits, feature flags (`feature_payroll`, `feature_audit_log`, `feature_priority_support`), public feature list, display flags. Edited by the owner |
+| `organization_subscriptions` | One row per organisation (primary key `organization_id`): `plan_code`, `status` (`trialing`/`active`/`grace`/`free`), `billing_mode` (`paystack`/`manual`/`exempt`), interval, trial/period/grace dates, Paystack customer, plan and subscription codes, amount, discount, owner overrides (`employee_limit_override`, `manual_monthly_pesewas`, `manual_until`, `note`). `organizations.plan` mirrors `plan_code` for older code |
+| `billing_checkouts` | Each Paystack checkout started by an admin (unique `reference`), with the quoted amount; becomes `success` once verified |
+| `billing_payments` | Every payment attempt and renewal (unique `reference`); successful ones get an `invoice_number` `EC-YYYY-NNNNNN` |
+| `billing_events` | Webhook events by unique `event_key` (idempotency), with a sanitised payload (no card authorisation codes) and processing result |
+| `billing_coupons`, `billing_coupon_redemptions` | The founding offer (`FOUNDING40`) with its place limit, and which organisation redeemed it until when |
+| `billing_notices` | In-app notices (trial ending, payment failed, grace…) with a unique `dedupe_key` so the daily job never repeats one |
+| `billing_job_runs` | One row per daily job run with a summary |
+
 ### `schema_migrations`
 
 The name of every applied migration file and when it ran. `scripts/migrate.js` uses it to apply each
 file exactly once.
 
-## Migrations 001–008
+## Migrations 001–009
 
 Migrations live in `db/migrations/` and run in filename order on every deploy (only the new ones).
 They are forward-only: there are no "down" scripts.
@@ -175,13 +188,14 @@ They are forward-only: there are no "down" scripts.
 | 006 | `006_org_signup_details_enquiries.sql` | Adds the `rejected` status and sign-up details (type, size, country, city, phone, contact, rejection reason, `reviewed_at`); creates `enquiries` |
 | 007 | `007_payroll.sql` | Creates `employee_pay_details`, `employee_pay_items`, `payroll_runs`, `payslips` (all money in pesewas; payslips are snapshots) |
 | 008 | `008_audit_scope_last_login.sql` | Adds `audit_logs.scope` (`tenant`/`platform`) and backfills it from the action name and whether an owner acted; adds `users.last_login_at`, backfilled from past `LOGIN` entries |
+| 009 | `009_subscriptions.sql` | Creates the subscription and billing tables above; seeds the five plans and the `FOUNDING40` coupon; gives the demo organisation Growth (exempt), active and suspended organisations a 30-day Growth trial, and pending registrations a trial that starts on approval; `organizations.plan` defaults to `growth` |
 
 `tests/migrations.test.js` builds a populated v1 database, runs every migration, checks that no
 data was lost and that a second run does nothing.
 
 ### Writing a new migration
 
-1. Add `db/migrations/009_short_name.sql`. Never edit a migration that has already run in production.
+1. Add `db/migrations/010_short_name.sql`. Never edit a migration that has already run in production.
 2. Prefer additive changes (new tables, nullable columns, new indexes), so the previous code version
    still works if you need to roll back.
 3. If you add a table, add it to the drop lists in `tests/helpers.js` and `scripts/init-db.js`.

@@ -90,6 +90,18 @@ it never matches owner accounts.
 - `payslipPdf.js`: builds the payslip PDF with pdfkit from the stored payslip snapshot, embedding
   Inter from `@fontsource/inter`. Only the last four digits of a bank account are printed.
 
+- `paystack.js`: small Paystack API client (plans, transactions, subscriptions) and webhook signature
+  check (HMAC SHA-512, constant-time). Tests swap the transport, so no request leaves the machine.
+- `billing.js`: plans, subscriptions and entitlements (`getEntitlements`, `assertRoleCapacity`),
+  quotes and coupons, checkout and verification, webhook handling, owner actions, revenue.
+- `billingDaily.js`: the daily job (`runDaily`), run by `scripts/billing-daily.js`
+  (`npm run billing:daily`).
+- `invoicePdf.js`: the PDF invoice for a successful payment.
+- Plan limits are enforced in `middleware/planGuards.js` (`requireFeature`,
+  `requireEmployeeCapacity`, `requireEmployeesWithinLimit`) and, for accounts, in
+  `OrganizationModel.lockSeat`. Billing routes: `routes/billingRoute.js`; owner routes in
+  `routes/platformRoute.js` (`/billing`, `/plans`, `/coupons`, `/organizations/:id/subscription…`).
+
 ### `db/` and `scripts/`
 
 - `scripts/init-db.js` (`npm run db:init`): runs `db/schema.sql`, then `scripts/migrate.js`
@@ -151,12 +163,13 @@ e2e/e2e.py           Playwright end-to-end script (local stack)
 
 | Folder | Pages |
 |---|---|
-| `pages/public/` | `Home` (landing), `Contact` (request a demo), `Privacy`, `Terms`, `NotFound` |
+| `pages/public/` | `Home` (landing, with `#pricing`), `Pricing`, `Contact` (request a demo), `Privacy`, `Terms`, `NotFound` |
 | `pages/auth/` | `Login`, `RegisterOrganisation`, `Register` (explains there is no public employee sign-up), `ForgotPassword` (explains that an administrator resets passwords), `ResetPassword` (one-time link), `ChangePassword` |
 | `pages/employee/` | `EmployeeDashboard` (profile and linked employment record) |
 | `pages/hr/` | `HRDashboard`, `EmployeeListPage`, `AddEmployeePage`, `DepartmentsPage`, `MyProfilePage` |
 | `pages/admin/` | `AdminDashboard`, `UserList` ("View Users"), `UserManagement`, `AuditLog` |
-| `pages/owner/` | `OwnerOverview`, `OwnerOrganisations`, `OwnerOrganisationDetail`, `OwnerAdmins` + `OwnerAdminTable`, `OwnerEnquiries`, `OwnerAuditLog`, `OwnerAccount`, `PendingApprovals`, `RejectModal`, `ownerShared.js` |
+| `pages/owner/` | `OwnerOverview`, `OwnerOrganisations`, `OwnerOrganisationDetail`, `OwnerAdmins` + `OwnerAdminTable`, `OwnerEnquiries`, `OwnerAuditLog`, `OwnerAccount`, `OwnerBilling` (Revenue), `OwnerPlans`, `OrgSubscriptionPanel`, `PendingApprovals`, `RejectModal`, `ownerShared.js` |
+| `pages/billing/` | `Billing` (admin plan, usage, change plan, payments and invoices), `BillingCallback` (Paystack return page) |
 | `pages/payroll/` | `PayrollPage` (months, pay details, tax rates, Run payroll), `PayrollRunPage` (one month), `PayslipPage`, `PayslipDocument` (shared on-screen and print layout), `MyPayslips`, `payrollShared.js` (money formatting), `Payroll.css` (includes print CSS) |
 
 ### Components
@@ -167,6 +180,7 @@ e2e/e2e.py           Playwright end-to-end script (local stack)
 - `components/common/`: `Modal`, `EmployeeForm`, `EmployeeList`, `EmployeeStats`,
   `EmploymentRecord`, `ProfilePanel`, `RoleBadge`/`StatusBadge`, `ActionBadge` (colours audit actions).
 - `components/auth/`: `AuthLayout`, `PasswordInput` (show/hide), `SubmitButton`.
+- `components/billing/`: `PricingSection` and `PricingPlans` (plan cards, public and Billing page), `IntervalToggle`, `PlanBanner` (trial, grace, limit and payroll notices); helpers in `api/billing.js`.
 - `components/brand/Logo.js`: the SVG logo.
 
 ### Styles and tokens

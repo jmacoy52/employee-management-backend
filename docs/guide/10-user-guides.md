@@ -36,7 +36,7 @@ Navigation: **Overview**, **Organisations**, **Enquiries**, **Organisation admin
 1. **Organisations** → search or filter by status → click the organisation's name.
 2. *Status and usage* shows details, active users against seats, and dates. Use **Suspend**
    (everyone in it is signed out and cannot sign in; data is kept) or **Reactivate**.
-3. *Details*: change name, plan, seat limit, type, staff size, location and contact, then press
+3. *Details*: change name, seat limit, type, staff size, location and contact, then press
    **Save changes**.
 4. *Organisation admin*: the account holder(s), with status and last sign-in. Use **Deactivate** /
    **Activate**, or **Reset Password** → set a temporary password (shown once; they must change it
@@ -45,9 +45,23 @@ Navigation: **Overview**, **Organisations**, **Enquiries**, **Organisation admin
 5. *User accounts by role*: how many admin, HR and employee accounts are active or deactivated.
    You do not see staff names; the organisation's admins manage their own people.
 
+6. *Subscription*: plan, status, trial or renewal date, amount, discount, last payment and payments.
+   **Extend trial** (1–90 days), **Assign plan** (any plan including Enterprise, with an optional
+   employee limit, agreed monthly price, number of months and an internal note; any Paystack
+   subscription is stopped first) and **Apply founding discount**. Every action is recorded in the
+   platform audit log. The demo organisation is exempt.
+
 ![Organisation detail (owner)](img/owner-org-detail-1280.png)
 
-To add a client yourself: **Organisations** → **New organisation** → organisation name, plan,
+### Revenue and plans
+
+- **Revenue**: monthly recurring revenue, annual run rate, money collected in the last 30 days,
+  organisations by status, MRR by plan and recent payments.
+- **Plans and prices**: **Edit** a plan to change its prices, included employees, extra-employee
+  price, account limits, features and the feature list shown on the pricing page (live within a
+  minute). Switch the **founding offer** on or off.
+
+To add a client yourself: **Organisations** → **New organisation** → organisation name,
 seat limit, contact e-mail (optional) and the first administrator (name, e-mail, password optional).
 If you leave the password empty, a temporary one is shown once: give the sign-in details to the admin.
 
@@ -80,7 +94,7 @@ and search. Routine activity inside an organisation is not shown to you.
 ## Organisation admin (`/admin`)
 
 Navigation: **Dashboard**, **View Users**, **User Management**, **Audit Log**, **Departments**,
-**Payroll**, **HR Dashboard**, **Change Password**. Admins can also do everything HR can.
+**Payroll**, **Billing**, **HR Dashboard**, **Change Password**. Admins can also do everything HR can.
 
 ### Create accounts
 
@@ -98,9 +112,25 @@ Navigation: **Dashboard**, **View Users**, **User Management**, **Audit Log**, *
 6. **View Users** is a read-only list with search and a role filter, showing which accounts are
    linked to an employee record.
 
+### Billing
+
+**Billing** (admins only) shows your plan, its status (free trial, active, grace period or Free), the
+trial or renewal date, usage against the plan's limits, and your payment history with PDF invoices.
+
+1. To choose or change a plan: pick **Monthly** or **Yearly**, then **Choose …** on a plan. You pay on
+   Paystack's secure page (card or mobile money) and come back to a confirmation page.
+2. **Cancel renewal** keeps the plan until the end of the period you paid for; **Update card** opens
+   Paystack's card page.
+3. If a payment fails, you get a 7-day grace period (shown as a red banner), then the organisation
+   moves to Free. Nothing is deleted: records over a limit become read-only until you upgrade.
+4. If online payment is not switched on yet, the page says **Payments coming soon, contact us**: use
+   the contact page and EmploCore will set up your plan.
+
+New organisations get a 30-day Growth trial with no card. The demo organisation is never billed.
+
 ### Audit log
 
-**Audit Log** shows everything that happened in your organisation (sign-ins, account changes,
+**Audit Log** (Growth plan and above) shows everything that happened in your organisation (sign-ins, account changes,
 employee, department and payroll changes, and EmploCore's actions on your organisation). Filter by
 action and search the descriptions. The dashboard shows the latest entries under *Recent activity*.
 

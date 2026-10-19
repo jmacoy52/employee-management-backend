@@ -17,7 +17,7 @@ Secrets are never written here. Environment variables are named, never given val
 | 6 | [Security and tenancy](06-security-and-tenancy.md) | Auth flow, permissions matrix, limits, audit, demo mode |
 | 7 | [Payroll](07-payroll.md) | Ghana PAYE and SSNIT, a worked example, yearly updates |
 | 8 | [Scalability](08-scalability.md) | Current limits, what breaks first, growth path, monitoring |
-| 9 | [Monetisation roadmap](09-monetisation-roadmap.md) | Proposed Paystack subscriptions (not live) |
+| 9 | [Subscriptions and billing](09-monetisation-roadmap.md) | LIVE: plans, trials, limits, Paystack, daily job, switching on payments |
 | 10 | [User guides](10-user-guides.md) | Step-by-step for owner, org admin, HR and employee |
 | 11 | [Operations runbook](11-operations-runbook.md) | Env vars, deploys, migrations, CLIs, rollback, common errors |
 | 12 | [Glossary](12-glossary.md) | Terms used across the product and code |

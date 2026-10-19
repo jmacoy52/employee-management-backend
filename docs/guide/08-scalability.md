@@ -46,7 +46,7 @@ one thing at a time.
    headers for published payslip PDFs (they never change).
 7. **Background jobs and cron.** Move long work off the request: payroll runs for large
    organisations, bulk PDF generation, and the daily billing job (see
-   [Monetisation](09-monetisation-roadmap.md)). Options: a Render Cron Job or Background Worker with a
+   [Subscriptions](09-monetisation-roadmap.md)). Options: a Render Cron Job or Background Worker with a
    simple jobs table in MySQL, or a queue (for example BullMQ on Redis).
 8. **File storage** if you start keeping files (bulk payslip archives, imports, logos): use object
    storage (S3, Cloudflare R2, Backblaze B2) with signed URLs. Never store files in the database or

@@ -235,11 +235,15 @@ test('owner creates an organisation with its first admin (temporary password sho
   assert.equal(l.status, 200);
   assert.equal(l.body.user.mustChangePassword, true);
   const [[org]] = await conn.query('SELECT status, plan, seat_limit, contact_email FROM organizations WHERE id = ?', [r.body.id]);
-  assert.deepEqual({ ...org }, { status: 'active', plan: 'pilot', seat_limit: 5, contact_email: 'abena@clinic.example' });
+  // The plan comes from the subscription (migration 009): a new organisation starts a 30-day Growth trial now
+  assert.deepEqual({ ...org }, { status: 'active', plan: 'growth', seat_limit: 5, contact_email: 'abena@clinic.example' });
+  const [[sub]] = await conn.query('SELECT plan_code, status, trial_ends_at FROM organization_subscriptions WHERE organization_id = ?', [r.body.id]);
+  assert.deepEqual([sub.plan_code, sub.status], ['growth', 'trialing']);
+  assert.ok(Math.abs(new Date(sub.trial_ends_at) - Date.now() - 30 * 86400000) < 120000);
   assert.equal((await actions('CREATE_ORGANIZATION'))[0].organization_id, r.body.id);
 });
 
-test('owner edits name, plan, seat limit and contact e-mail', async () => {
+test('owner edits name, seat limit and contact e-mail (the plan belongs to the subscription)', async () => {
   const [[org]] = await conn.query("SELECT id FROM organizations WHERE name = 'Cape Coast Clinic'");
   const put = (body) => request(app).put(P(`/organizations/${org.id}`)).set(auth(ownerToken)).send(body);
   assert.equal((await put({ name: 'C' })).status, 400);
@@ -249,8 +253,8 @@ test('owner edits name, plan, seat limit and contact e-mail', async () => {
   const r = await put({ name: 'Cape Coast Clinic Ltd', plan: 'standard', seat_limit: '', contact_email: 'office@clinic.example' });
   assert.equal(r.status, 200);
   const [[row]] = await conn.query('SELECT name, plan, seat_limit, contact_email FROM organizations WHERE id = ?', [org.id]);
-  assert.deepEqual({ ...row }, { name: 'Cape Coast Clinic Ltd', plan: 'standard', seat_limit: null, contact_email: 'office@clinic.example' });
-  assert.match((await actions('UPDATE_ORGANIZATION'))[0].descriptions, /plan pilot -> standard/);
+  assert.deepEqual({ ...row }, { name: 'Cape Coast Clinic Ltd', plan: 'growth', seat_limit: null, contact_email: 'office@clinic.example' });
+  assert.doesNotMatch((await actions('UPDATE_ORGANIZATION'))[0].descriptions, /plan/);
   assert.equal((await request(app).put(P('/organizations/99999')).set(auth(ownerToken)).send({ name: 'Nope' })).status, 404);
 });
 

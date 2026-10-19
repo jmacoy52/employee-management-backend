@@ -26,6 +26,10 @@ Values of secrets never go in Git, chat or this guide. Set them in the Render or
 | `ORG_SIGNUP_RATE_LIMIT_MAX`, `ORG_SIGNUP_RATE_LIMIT_WINDOW_MIN` | no | Sign-up and bootstrap limit (5 per 60 min) |
 | `ENQUIRY_RATE_LIMIT_MAX`, `ENQUIRY_RATE_LIMIT_WINDOW_MIN` | no | Contact form limit (5 per 60 min) |
 | `NODE_VERSION`, `PORT` | set by `render.yaml` / Render | Node 20; the port Render assigns |
+| `PAYSTACK_SECRET_KEY` | for payments | Paystack secret key. Unset = payments off ("Payments coming soon, contact us"); also verifies webhook signatures |
+| `PAYSTACK_PUBLIC_KEY` | no | Paystack public key (kept for a future inline checkout) |
+| `APP_URL` | no | Frontend address used for the Paystack callback (default `https://emplocore.vercel.app`) |
+| `PAYSTACK_CALLBACK_URL` | no | Overrides the callback (default `APP_URL/admin/billing/callback`) |
 | `ENABLE_AUDIT_LOG_TEST_ROUTE` | local only | Re-enables the old test route that writes audit entries. Never in production |
 
 The live service currently runs as the public demo. `render.yaml` documents `DEMO_MODE` as `"true"`,
@@ -51,6 +55,15 @@ but the dashboard value wins over the blueprint, so check the dashboard.
 | `REACT_APP_DEMO_MODE` | `true` shows demo logins; `false` for a real deployment. Vercel's value overrides `.env.production` |
 
 These are baked in at **build** time: change them, then redeploy.
+
+### Billing cron (Render cron service `emplocore-billing-daily`)
+
+Defined in `render.yaml`: `npm install`, then `npm run billing:daily`, every day at 06:00 UTC
+(06:00 Accra). It needs `DB_URL`, `DB_SSL_CA_BASE64` and `PAYSTACK_SECRET_KEY` (without the key it
+still runs trials, grace and downgrades; it just skips the Paystack checks). It is safe to run twice
+or by hand: `npm run billing:daily` locally against a database. Each run is logged and recorded in
+`billing_job_runs`. Render bills cron jobs by run time, at least US$1 a month per job.
+See [Subscriptions](09-monetisation-roadmap.md) and `docs/PAYSTACK_SETUP.md`.
 
 ## Deploying
 
