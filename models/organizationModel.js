@@ -190,14 +190,15 @@ class OrganizationModel {
     }
   }
 
-  // Deletes an organisation only when it has no user accounts and no employee records
-  // (its empty departments go with it). Returns 'deleted' | 'not_found' | 'in_use'.
+  // Deletes an organisation only when it has no user accounts, no employee records and no payroll
+  // history (its empty departments go with it). Returns 'deleted' | 'not_found' | 'in_use'.
   static async deleteIfEmpty(id) {
     const [result] = await pool.query(
       `DELETE FROM organizations WHERE id = ?
          AND NOT EXISTS (SELECT 1 FROM users WHERE organization_id = ?)
-         AND NOT EXISTS (SELECT 1 FROM employees WHERE organization_id = ?)`,
-      [id, id, id]
+         AND NOT EXISTS (SELECT 1 FROM employees WHERE organization_id = ?)
+         AND NOT EXISTS (SELECT 1 FROM payroll_runs WHERE organization_id = ?)`,
+      [id, id, id, id]
     );
     if (result.affectedRows) return 'deleted';
     return (await OrganizationModel.findById(id)) ? 'in_use' : 'not_found';

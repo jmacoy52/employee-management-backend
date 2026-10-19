@@ -16,6 +16,7 @@ const path = require('path');
 const mysql = require('mysql2/promise');
 const { buildDbConfig } = require('../config/dbConfig');
 const { runMigrations } = require('./migrate');
+const { seedDemoPayroll, shouldSeedDemoPayroll } = require('./seed-payroll-demo');
 
 const args = new Set(process.argv.slice(2));
 const DB_DIR = path.join(__dirname, '..', 'db');
@@ -38,7 +39,7 @@ async function main() {
     if (args.has('--reset')) {
       if (!args.has('--yes')) throw new Error('--reset drops all EmploCore tables; add --yes to confirm.');
       console.log('Dropping tables...');
-      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, departments, employees, user_profiles, users, organizations, enquiries; SET FOREIGN_KEY_CHECKS = 1;');
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, departments, employees, user_profiles, users, organizations, enquiries, employee_pay_items, employee_pay_details, payslips, payroll_runs; SET FOREIGN_KEY_CHECKS = 1;');
     }
 
     console.log('Applying db/schema.sql');
@@ -51,6 +52,13 @@ async function main() {
       await conn.query(fs.readFileSync(path.join(DB_DIR, 'seed.sql'), 'utf8'));
     } else {
       console.log('Skipping demo data (set SEED_DEMO=true or pass --seed to load it)');
+    }
+
+    // Demo payroll (pay details and published payslips of the demo organisation): with the demo
+    // data, or on a demo deployment (DEMO_MODE=true) whose demo organisation has no payroll yet
+    if (!args.has('--schema-only') && await shouldSeedDemoPayroll(conn, { force: shouldSeed() })) {
+      const result = await seedDemoPayroll(conn);
+      console.log('Demo payroll:', result);
     }
 
     const [counts] = await conn.query(

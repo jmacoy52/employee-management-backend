@@ -12,6 +12,7 @@ const departmentRoutes = require('./routes/departmentRoute');
 const organizationRoutes = require('./routes/organizationRoute');
 const platformRoutes = require('./routes/platformRoute');
 const enquiryRoutes = require('./routes/enquiryRoute');
+const payrollRoutes = require('./routes/payrollRoute');
 
 if (!process.env.JWT_SECRET) {
   console.error('JWT_SECRET is not set. Logins will fail until it is configured.');
@@ -49,6 +50,7 @@ app.use('/api/departments', departmentRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/platform', platformRoutes);
 app.use('/api/enquiries', enquiryRoutes);
+app.use('/api/payroll', payrollRoutes);
 
 // Home test route
 app.get('/', (req, res) => {
