@@ -109,7 +109,9 @@ test('route protection by role', async () => {
   assert.equal((await request(app).get('/api/users/all').set(auth(tokens.hr))).status, 403);
   assert.equal((await request(app).get('/api/users/all').set(auth(tokens.admin))).status, 200);
   assert.equal((await request(app).get('/api/audit-logs').set(auth(tokens.hr))).status, 403);
-  assert.equal((await request(app).get('/api/audit-logs/recent').set(auth(tokens.hr))).status, 200);
+  assert.equal((await request(app).get('/api/audit-logs/recent').set(auth(tokens.hr))).status, 403); // HR: no audit-log access
+  assert.equal((await request(app).get('/api/audit-logs/recent').set(auth(tokens.employee))).status, 403);
+  assert.equal((await request(app).get('/api/audit-logs/recent').set(auth(tokens.admin))).status, 200);
   assert.equal((await request(app).get('/api/users/linkable').set(auth(tokens.employee))).status, 403);
   assert.equal((await request(app).get('/api/employees').set(auth('garbage'))).status, 401);
 });

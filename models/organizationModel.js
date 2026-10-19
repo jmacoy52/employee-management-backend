@@ -131,15 +131,27 @@ class OrganizationModel {
     return rows;
   }
 
-  static async users(organizationId) {
+  // The organisation's admin account(s): what the platform owner may see about its people
+  static async admins(organizationId) {
     const [rows] = await pool.query(
-      `SELECT u.id, u.username, u.email, u.role, u.is_active, u.must_change_password, u.created_at,
-              e.id AS employee_id, e.FullName AS employee_name
-       FROM users u LEFT JOIN employees e ON e.user_id = u.id
-       WHERE u.organization_id = ? ORDER BY u.id`,
+      `SELECT id, username, email, role, is_active, must_change_password, created_at, last_login_at
+       FROM users WHERE organization_id = ? AND role = 'admin' ORDER BY id`,
       [organizationId]
     );
     return rows;
+  }
+
+  // Head counts by role and status, e.g. { admin: { active: 1, inactive: 0 }, hr: {...}, employee: {...} }
+  static async userCounts(organizationId) {
+    const [rows] = await pool.query(
+      `SELECT role, SUM(is_active = 1) AS active, SUM(is_active = 0) AS inactive
+       FROM users WHERE organization_id = ? GROUP BY role`,
+      [organizationId]
+    );
+    const counts = {};
+    for (const role of ['admin', 'hr', 'employee']) counts[role] = { active: 0, inactive: 0 };
+    for (const r of rows) counts[r.role] = { active: Number(r.active) || 0, inactive: Number(r.inactive) || 0 };
+    return counts;
   }
 
   static async update(id, { name, plan, seatLimit, contactEmail, details = {} }) {

@@ -24,14 +24,16 @@ router.post('/organizations/:id/reactivate', PlatformController.statusAction('re
 router.post('/organizations/:id/reject', PlatformController.statusAction('reject'));
 router.delete('/organizations/:id', PlatformController.deleteOrganization);
 
-// Users across organisations. The account actions reuse the org-admin handlers with an
-// "any organisation" scope (owners are never matched); demo protection still applies.
-router.get('/users', PlatformController.listUsers);
-router.put('/users/:id/status', UserController.setUserStatus);
-router.post('/users/:id/temporary-password', UserController.setTemporaryPassword);
-router.post('/users/:id/reset-link', UserController.createResetLink);
+// Organisation admins across organisations. Tenant boundary: the owner only lists and acts on
+// organisation admin accounts (status, temporary password, reset link), never HR or employee
+// accounts; those stay with the organisation's own admins. The account actions reuse the
+// org-admin handlers with an "any organisation" scope; demo protection still applies.
+router.get('/admins', PlatformController.listAdmins);
+router.put('/admins/:id/status', PlatformController.requireOrgAdminTarget, UserController.setUserStatus);
+router.post('/admins/:id/temporary-password', PlatformController.requireOrgAdminTarget, UserController.setTemporaryPassword);
+router.post('/admins/:id/reset-link', PlatformController.requireOrgAdminTarget, UserController.createResetLink);
 
-// Audit log of every organisation (and platform-level events)
+// Platform-level audit log: owner actions and organisation-level events only (scope 'platform')
 router.get('/audit-logs', PlatformController.auditLogs);
 
 // "Request a demo" enquiries from the public contact form

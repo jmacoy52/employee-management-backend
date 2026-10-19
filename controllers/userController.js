@@ -201,6 +201,11 @@ class UserController {
         if (err) console.error('Failed to log login action:', err);
       });
 
+      // Last successful sign-in (shown to the platform owner for organisation admins)
+      db.query('UPDATE users SET last_login_at = UTC_TIMESTAMP() WHERE id = ?', [user.id], (err) => {
+        if (err) console.error('Failed to record the last sign-in:', err.message);
+      });
+
       res.status(200).json({
         message: 'Login successful',
         token,

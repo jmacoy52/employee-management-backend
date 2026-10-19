@@ -127,7 +127,7 @@ test('every list only contains the caller organisation (both directions)', async
     employees: (await request(app).get('/api/employees').set(auth(hr))).body,
     departments: (await request(app).get('/api/departments').set(auth(hr))).body,
     audit: (await request(app).get('/api/audit-logs').set(auth(admin))).body,
-    recent: (await request(app).get('/api/audit-logs/recent').set(auth(hr))).body,
+    recent: (await request(app).get('/api/audit-logs/recent').set(auth(admin))).body,
   });
   const b = await lists(B.admin, B.hr);
   assert.deepEqual(b.users.map((u) => u.email).sort(), ['ama@kumasi.example', 'kofi.hr@kumasi.example', 'yaa@kumasi.example']);

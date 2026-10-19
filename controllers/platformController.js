@@ -4,7 +4,7 @@ const db = require('../config/db');
 const OrganizationModel = require('../models/organizationModel');
 const AuditLogModel = require('../models/auditLogModel');
 const { ANY_ORG, scopeClause } = require('../models/userModel');
-const { ROLES, passwordProblem, ownerPasswordProblem } = require('../config/roles');
+const { passwordProblem, ownerPasswordProblem } = require('../config/roles');
 const { demoMode } = require('../config/demoAccounts');
 const { ownerSetupTokenHash } = require('../config/ownerBootstrap');
 const { createOrganisationWithAdmin, EMAIL_RE } = require('./organizationController');
@@ -131,7 +131,10 @@ class PlatformController {
     try {
       const org = await OrganizationModel.findById(id);
       if (!org) return res.status(404).json({ error: 'Organisation not found' });
-      res.json({ ...org, users: await OrganizationModel.users(id) });
+      // Tenant boundary: the owner sees the organisation's admin account(s) and head counts by
+      // role, never the names or e-mails of its HR and employee accounts
+      const [admins, userCounts] = await Promise.all([OrganizationModel.admins(id), OrganizationModel.userCounts(id)]);
+      res.json({ ...org, admins, user_counts: userCounts });
     } catch (err) {
       serverError(res, 'load the organisation', err);
     }
@@ -247,27 +250,26 @@ class PlatformController {
     }
   }
 
-  // ---------- users across organisations (never owners)
-  // ?q= (name/e-mail) &organization_id= &role= &status=active|inactive
-  static async listUsers(req, res) {
+  // ---------- organisation admins across organisations (the owner never lists HR or employee accounts)
+  // ?q= (name/e-mail) &organization_id= &status=active|inactive
+  static async listAdmins(req, res) {
     const scope = scopeClause(ANY_ORG, 'u.organization_id');
-    const where = [scope.sql];
+    const where = [scope.sql, "u.role = 'admin'"];
     const params = [...scope.params];
     const q = String(req.query.q || '').trim().slice(0, 100);
     if (q) {
       const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
-      where.push('(u.username LIKE ? OR u.email LIKE ?)');
-      params.push(like, like);
+      where.push('(u.username LIKE ? OR u.email LIKE ? OR o.name LIKE ?)');
+      params.push(like, like, like);
     }
     const orgId = toId(req.query.organization_id);
     if (orgId) { where.push('u.organization_id = ?'); params.push(orgId); }
-    if (ROLES.includes(req.query.role)) { where.push('u.role = ?'); params.push(req.query.role); }
     if (req.query.status === 'active') where.push('u.is_active = 1');
     if (req.query.status === 'inactive') where.push('u.is_active = 0');
     const { limit, offset } = pagination(req.query);
     try {
       const [rows] = await pool.query(
-        `SELECT u.id, u.username, u.email, u.role, u.is_active, u.must_change_password, u.created_at,
+        `SELECT u.id, u.username, u.email, u.role, u.is_active, u.must_change_password, u.created_at, u.last_login_at,
                 u.organization_id, o.name AS organization_name, o.status AS organization_status
          FROM users u JOIN organizations o ON o.id = u.organization_id
          WHERE ${where.join(' AND ')}
@@ -276,7 +278,23 @@ class PlatformController {
       );
       res.json(rows);
     } catch (err) {
-      serverError(res, 'list users', err);
+      serverError(res, 'list organisation admins', err);
+    }
+  }
+
+  // Guard for the owner's support actions on accounts (status, temporary password, reset link):
+  // the target must be an organisation admin. HR, employee and owner accounts answer 404, exactly
+  // as if they did not exist, so the owner cannot act on or probe tenant staff.
+  static async requireOrgAdminTarget(req, res, next) {
+    const id = toId(req.params.id);
+    if (!id) return res.status(404).json({ error: 'User not found' });
+    try {
+      const [[row]] = await pool.query(
+        "SELECT id FROM users WHERE id = ? AND role = 'admin' AND organization_id IS NOT NULL", [id]);
+      if (!row) return res.status(404).json({ error: 'User not found' });
+      next();
+    } catch (err) {
+      serverError(res, 'load the account', err);
     }
   }
 

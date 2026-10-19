@@ -12,9 +12,11 @@ test('migrations upgrade a populated v1 database without data loss and are idemp
   conn = await rawConnection();
   await conn.query("INSERT INTO users (username, email, password, role) VALUES ('Old Admin', 'old.admin@example.com', 'x', 'admin'), ('Old Emp', 'old.emp@example.com', 'x', 'employee')");
   await conn.query("INSERT INTO employees (FullName, email, position, Department, salary) VALUES ('Old Emp', 'old.emp@example.com', 'Clerk', 'Admin', 1000), ('Old Two', NULL, 'Driver', ' admin ', 900), ('Old Three', NULL, 'Cook', 'Kitchen', 800)");
+  const [[oldAdmin]] = await conn.query("SELECT id FROM users WHERE email = 'old.admin@example.com'");
+  await conn.query("INSERT INTO audit_logs (UserId, actions, descriptions) VALUES (?, 'LOGIN', 'User Old Admin logged in'), (?, 'CREATE_ADMIN', 'First admin created'), (?, 'CREATE_EMPLOYEE', 'Employee added')", [oldAdmin.id, oldAdmin.id, oldAdmin.id]);
   const [[before]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   const ran = await runMigrations(conn, { log: () => {} });
-  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql', '006_org_signup_details_enquiries.sql', '007_payroll.sql']);
+  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql', '006_org_signup_details_enquiries.sql', '007_payroll.sql', '008_audit_scope_last_login.sql']);
   const [[afterCounts]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   assert.deepEqual(afterCounts, before);
   const [[flags]] = await conn.query('SELECT MIN(is_active) a, MAX(token_version) v, MAX(must_change_password) m FROM users');
@@ -42,6 +44,11 @@ test('migrations upgrade a populated v1 database without data loss and are idemp
   await conn.query("INSERT INTO departments (organization_id, name) VALUES (?, 'Admin')", [other.id]);
   await conn.query("INSERT INTO employees (organization_id, FullName, email, position, Department, salary) VALUES (?, 'Old Emp', 'old.emp@example.com', 'Clerk', 'Admin', 1)", [other.id]);
   await assert.rejects(conn.query("INSERT INTO departments (organization_id, name) VALUES (?, 'admin')", [other.id]), /Duplicate/);
+  // 008: existing entries get a reader scope; old routine activity stays inside the organisation
+  const [scoped] = await conn.query('SELECT actions, scope FROM audit_logs ORDER BY LogId');
+  assert.deepEqual(scoped.map((r) => [r.actions, r.scope]), [['LOGIN', 'tenant'], ['CREATE_ADMIN', 'platform'], ['CREATE_EMPLOYEE', 'tenant']]);
+  const [[lastLogin]] = await conn.query('SELECT last_login_at FROM users WHERE id = ?', [oldAdmin.id]);
+  assert.ok(lastLogin.last_login_at); // backfilled from the LOGIN entry
   assert.deepEqual(await runMigrations(conn, { log: () => {} }), []);
 });
 
