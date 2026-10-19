@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Creates the EmploCore tables and loads demo data.
+// Creates the EmploCore tables, applies migrations and (optionally) loads demo data.
 //
 //   DB_URL=mysql://user:pass@host:port/db?ssl-mode=REQUIRED DB_SSL_CA_PATH=./ca.pem node scripts/init-db.js
 //
 // Options:
-//   --schema-only   create tables, skip demo data
+//   --schema-only   create tables + migrations, skip demo data (same as the default unless seeding is on)
+//   --seed          also load db/seed.sql (demo data). SEED_DEMO=true does the same.
 //   --reset         DROP the EmploCore tables first (asks for --yes as well)
 //
 // Uses the same DB_URL / DB_SSL_* variables as the server (see config/dbConfig.js).
@@ -14,9 +15,14 @@ const fs = require('fs');
 const path = require('path');
 const mysql = require('mysql2/promise');
 const { buildDbConfig } = require('../config/dbConfig');
+const { runMigrations } = require('./migrate');
 
 const args = new Set(process.argv.slice(2));
 const DB_DIR = path.join(__dirname, '..', 'db');
+
+// Demo data is loaded only when asked for, so a deploy never re-creates demo
+// accounts that were deleted or rotated in production.
+const SEED = !args.has('--schema-only') && (args.has('--seed') || String(process.env.SEED_DEMO).toLowerCase() === 'true');
 
 async function main() {
   const config = buildDbConfig({ multipleStatements: true });
@@ -32,15 +38,19 @@ async function main() {
     if (args.has('--reset')) {
       if (!args.has('--yes')) throw new Error('--reset drops all EmploCore tables; add --yes to confirm.');
       console.log('Dropping tables...');
-      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS audit_logs, employees, user_profiles, users; SET FOREIGN_KEY_CHECKS = 1;');
+      await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, employees, user_profiles, users; SET FOREIGN_KEY_CHECKS = 1;');
     }
 
     console.log('Applying db/schema.sql');
     await conn.query(fs.readFileSync(path.join(DB_DIR, 'schema.sql'), 'utf8'));
 
-    if (!args.has('--schema-only')) {
+    await runMigrations(conn);
+
+    if (SEED) {
       console.log('Applying db/seed.sql');
       await conn.query(fs.readFileSync(path.join(DB_DIR, 'seed.sql'), 'utf8'));
+    } else {
+      console.log('Skipping demo data (set SEED_DEMO=true or pass --seed to load it)');
     }
 
     const [counts] = await conn.query(
@@ -53,7 +63,11 @@ async function main() {
   }
 }
 
+if (require.main === module) {
 main().catch((err) => {
   console.error('init-db failed:', err.message);
   process.exit(1);
 });
+}
+
+module.exports = { main };

@@ -28,6 +28,11 @@ INSERT IGNORE INTO employees (FullName, email, phone, position, Department, sala
   ('Kwabena Osei',   'kwabena.osei@emplocore.demo',   '+233 20 000 0009', 'Operations Supervisor',  'Operations',  7000.00),
   ('Esi Quaye',      'esi.quaye@emplocore.demo',      '+233 20 000 0010', 'HR Assistant',           'Human Resources', 5200.00);
 
+-- Link the demo employee account to its employee record (needs migration 003).
+UPDATE employees e JOIN users u ON u.email = e.email
+SET e.user_id = u.id
+WHERE e.email = 'kwame.mensah@emplocore.demo' AND e.user_id IS NULL;
+
 -- A few starter audit entries so the Audit Log page is not empty.
 INSERT INTO audit_logs (UserId, actions, descriptions)
 SELECT u.id, 'SEED', 'Demo data loaded'
