@@ -21,8 +21,9 @@ const employeeValidationSchema = {
       errorMessage: 'Invalid email format',
     },
     custom: {
-      options: async (value) => {
-        const existingEmployee = await EmployeeModel.findEmployeeByEmail(value);
+      // Unique within the signed-in user's organisation (the route authenticates first)
+      options: async (value, { req }) => {
+        const existingEmployee = await EmployeeModel.findEmployeeByEmail(value, req.user.organizationId);
         if (existingEmployee) {
           throw new Error('Employee email already exists');
         }

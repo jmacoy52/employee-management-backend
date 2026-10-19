@@ -65,14 +65,20 @@ test('login returns token with token version and mustChangePassword flag', async
 });
 
 // ---------- registration / roles
-test('public register: employee ok, hr and admin rejected', async () => {
+test('anonymous self sign-up is closed (any role); HR may create employee accounts only', async () => {
   const s = Date.now();
-  let r = await request(app).post('/api/users/register').send({ username: 'Pub Emp', email: `pub.${s}@example.com`, password: 'Password123' });
+  for (const role of [undefined, 'employee', 'hr', 'admin', 'owner']) {
+    const r = await request(app).post('/api/users/register').send({ username: 'Pub User', email: `pub.${role}.${s}@example.com`, password: 'Password123', role });
+    assert.equal(r.status, 403, String(role));
+    assert.equal(r.body.code, 'SELF_SIGNUP_CLOSED');
+  }
+  let r = await request(app).post('/api/users/register').set(auth(tokens.hr)).send({ username: 'HR Made', email: `hrmade.${s}@example.com`, password: 'Password123' });
   assert.equal(r.status, 201);
-  r = await request(app).post('/api/users/register').send({ username: 'Pub HR', email: `pubhr.${s}@example.com`, password: 'Password123', role: 'hr' });
+  r = await request(app).post('/api/users/register').set(auth(tokens.employee)).send({ username: 'Emp Made', email: `empmade.${s}@example.com`, password: 'Password123' });
   assert.equal(r.status, 403);
-  r = await request(app).post('/api/users/register').send({ username: 'Pub Admin', email: `pubad.${s}@example.com`, password: 'Password123', role: 'admin' });
-  assert.equal(r.status, 403);
+  // 'owner' is never an assignable role
+  r = await request(app).post('/api/users/register').set(auth(tokens.admin)).send({ username: 'Owner Try', email: `ownertry.${s}@example.com`, password: 'Password123', role: 'owner' });
+  assert.equal(r.status, 400);
 });
 
 test('admin token can create hr and admin; hr token cannot create admin', async () => {
@@ -87,11 +93,11 @@ test('admin token can create hr and admin; hr token cannot create admin', async 
 
 test('password policy: short, no digit, and duplicate email rejected', async () => {
   const s = Date.now();
-  let r = await request(app).post('/api/users/register').send({ username: 'Shorty', email: `sh.${s}@example.com`, password: 'abc12' });
+  let r = await request(app).post('/api/users/register').set(auth(tokens.admin)).send({ username: 'Shorty', email: `sh.${s}@example.com`, password: 'abc12' });
   assert.equal(r.status, 400);
-  r = await request(app).post('/api/users/register').send({ username: 'NoDigit', email: `nd.${s}@example.com`, password: 'abcdefghij' });
+  r = await request(app).post('/api/users/register').set(auth(tokens.admin)).send({ username: 'NoDigit', email: `nd.${s}@example.com`, password: 'abcdefghij' });
   assert.equal(r.status, 400);
-  r = await request(app).post('/api/users/register').send({ username: 'Dup', email: DEMO.hr.email, password: 'Password123' });
+  r = await request(app).post('/api/users/register').set(auth(tokens.admin)).send({ username: 'Dup', email: DEMO.hr.email, password: 'Password123' });
   assert.equal(r.status, 400);
 });
 

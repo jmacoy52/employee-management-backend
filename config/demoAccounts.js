@@ -50,12 +50,13 @@ function isProtectedUserId(userId) {
 
 // Employee record details needed to decide whether a change would break a demo login:
 // { protected, email } where protected = the record or its linked account is a demo account.
-function employeeProtection(employeeId) {
+// organizationId limits the lookup to one organisation (a record elsewhere counts as not found).
+function employeeProtection(employeeId, organizationId) {
   return new Promise((resolve, reject) => {
     if (!protectedEmails().length) return resolve({ protected: false, email: null });
     db.query(
-      'SELECT e.email, u.email AS linked_email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.id = ?',
-      [employeeId],
+      'SELECT e.email, u.email AS linked_email FROM employees e LEFT JOIN users u ON u.id = e.user_id WHERE e.id = ? AND e.organization_id = ?',
+      [employeeId, organizationId],
       (err, rows) => {
         if (err) return reject(err);
         const row = rows[0];

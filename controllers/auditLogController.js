@@ -4,7 +4,7 @@ const { pagination } = require('../config/pagination');
 class AuditLogController {
   //  Get all audit logs (admin only)
   static getAllAuditLogs(req, res) {
-    AuditLogModel.getAllLogs((err, logs) => {
+    AuditLogModel.getAllLogs(req.user.organizationId, (err, logs) => {
       if (err) {
         console.error('Error fetching audit logs:', err);
         return res.status(500).json({ error: 'Failed to fetch audit logs' });
@@ -15,7 +15,7 @@ class AuditLogController {
 
   // Get recent activities for HR (last 10 activities)
   static getRecentActivities(req, res) {
-    AuditLogModel.getRecentActivities((err, activities) => {
+    AuditLogModel.getRecentActivities(req.user.organizationId, (err, activities) => {
       if (err) {
         console.error('Error fetching recent activities:', err);
         return res.status(500).json({ error: 'Failed to fetch recent activities' });
@@ -32,7 +32,8 @@ class AuditLogController {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    AuditLogModel.insertLog({ userId, actions, descriptions }, (err, result) => {
+    // Always filed under the admin's own organisation
+    AuditLogModel.insertLog({ userId, actions, descriptions, organizationId: req.user.organizationId }, (err, result) => {
       if (err) {
         console.error('Error inserting audit log:', err);
         return res.status(500).json({ error: 'Failed to insert audit log' });

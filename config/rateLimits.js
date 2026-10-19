@@ -11,4 +11,15 @@ const authLimiter = rateLimit({
   message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
 });
 
-module.exports = { authLimiter };
+// Public organisation sign-up and the one-time owner bootstrap (per IP).
+//   ORG_SIGNUP_RATE_LIMIT_MAX        attempts per window (default 5)
+//   ORG_SIGNUP_RATE_LIMIT_WINDOW_MIN window length in minutes (default 60)
+const orgSignupLimiter = rateLimit({
+  windowMs: (Number(process.env.ORG_SIGNUP_RATE_LIMIT_WINDOW_MIN) || 60) * 60 * 1000,
+  limit: Number(process.env.ORG_SIGNUP_RATE_LIMIT_MAX) || 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many registrations from this network. Please try again later.' },
+});
+
+module.exports = { authLimiter, orgSignupLimiter };

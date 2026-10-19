@@ -4,28 +4,57 @@ const db = require('../config/db');
 // Routes a user may still call while an admin-issued temporary password must be changed.
 const PASSWORD_CHANGE_ALLOWED = ['/api/users/change-password', '/api/users/logout', '/api/users/me'];
 
+// Why an organisation's users are refused (login and existing tokens).
+const ORG_BLOCKED = {
+  pending: {
+    code: 'ORGANISATION_PENDING',
+    error: 'Your organisation is waiting for approval. You can sign in once EmploCore has approved it.',
+  },
+  suspended: {
+    code: 'ORGANISATION_SUSPENDED',
+    error: 'Your organisation\'s EmploCore account is suspended. Please contact EmploCore.',
+  },
+};
+
+// Returns { code, error } when this user may not use the app because of their organisation, else null.
+// Owners have no organisation; every other role must belong to an active one.
+function organisationBlock(row) {
+  if (row.role === 'owner') return row.organization_id === null ? null : ORG_BLOCKED.suspended;
+  if (!row.organization_id || !row.organization_status) return ORG_BLOCKED.suspended;
+  return ORG_BLOCKED[row.organization_status] || null;
+}
+
+const ACCOUNT_SQL = `SELECT u.id, u.username, u.email, u.role, u.is_active, u.token_version, u.must_change_password,
+    u.organization_id, o.name AS organization_name, o.slug AS organization_slug, o.status AS organization_status
+  FROM users u LEFT JOIN organizations o ON o.id = u.organization_id
+  WHERE u.id = ?`;
+
 // Loads the current account for a verified token. The role, active flag and
 // token_version come from the database, so role changes, deactivation, logout
 // and password changes take effect immediately instead of when the JWT expires.
+// The organisation (and its status) also comes from the database, never from the token or the
+// client: every org-scoped query uses req.user.organizationId.
 function loadAccount(payload, callback) {
-  db.query(
-    'SELECT id, username, email, role, is_active, token_version, must_change_password FROM users WHERE id = ?',
-    [payload.id],
-    (err, rows) => {
-      if (err) return callback(err);
-      const account = rows[0];
-      if (!account) return callback(null, null, 'Account no longer exists.');
-      if (!account.is_active) return callback(null, null, 'Account is deactivated.');
-      if ((payload.tv || 0) !== account.token_version) return callback(null, null, 'Session has been signed out. Please sign in again.');
-      callback(null, {
-        id: account.id,
-        username: account.username,
-        email: account.email,
-        role: account.role,
-        mustChangePassword: Boolean(account.must_change_password),
-      });
-    }
-  );
+  db.query(ACCOUNT_SQL, [payload.id], (err, rows) => {
+    if (err) return callback(err);
+    const account = rows[0];
+    if (!account) return callback(null, null, { error: 'Account no longer exists.' });
+    if (!account.is_active) return callback(null, null, { error: 'Account is deactivated.' });
+    if ((payload.tv || 0) !== account.token_version) return callback(null, null, { error: 'Session has been signed out. Please sign in again.' });
+    const blocked = organisationBlock(account);
+    if (blocked) return callback(null, null, blocked);
+    callback(null, {
+      id: account.id,
+      username: account.username,
+      email: account.email,
+      role: account.role,
+      mustChangePassword: Boolean(account.must_change_password),
+      organizationId: account.organization_id,
+      organization: account.organization_id
+        ? { id: account.organization_id, name: account.organization_name, slug: account.organization_slug }
+        : null,
+    });
+  });
 }
 
 function authenticateToken(req, res, next) {
@@ -44,7 +73,7 @@ function authenticateToken(req, res, next) {
         console.error('Auth lookup failed:', dbErr.message);
         return res.status(503).json({ error: 'Service temporarily unavailable. Please try again.' });
       }
-      if (!account) return res.status(401).json({ error: reason });
+      if (!account) return res.status(401).json(reason);
       if (account.mustChangePassword && !PASSWORD_CHANGE_ALLOWED.includes(req.originalUrl.split('?')[0])) {
         return res.status(403).json({ error: 'You must change your password before continuing.', code: 'PASSWORD_CHANGE_REQUIRED' });
       }
@@ -68,6 +97,15 @@ function optionalAuth(req, res, next) {
   });
 }
 
+// Platform owner console (/api/platform/*). Owners are not organisation users, so the org
+// guards below refuse them and this one refuses everybody else.
+function authorizeOwner(req, res, next) {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ error: 'Access denied. Platform owner role required.' });
+  }
+  next();
+}
+
 function authorizeAdmin(req, res, next) {
   if (req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Access denied. Admin role required.' });
@@ -83,4 +121,4 @@ function authorizeHR(req, res, next) {
   next();
 }
 
-module.exports = { authenticateToken, optionalAuth, authorizeAdmin, authorizeHR };
+module.exports = { authenticateToken, optionalAuth, authorizeOwner, authorizeAdmin, authorizeHR, organisationBlock, ORG_BLOCKED };

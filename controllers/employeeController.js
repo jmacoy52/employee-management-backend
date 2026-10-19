@@ -12,18 +12,19 @@ async function resolveDepartment(body, req) {
   const rawId = body.department_id;
   if (rawId !== undefined && rawId !== null && rawId !== '') {
     const id = Number(rawId);
-    const department = Number.isInteger(id) ? await DepartmentModel.findById(id) : null;
+    // Only the user's own organisation's departments can be chosen
+    const department = Number.isInteger(id) ? await DepartmentModel.findById(id, req.user.organizationId) : null;
     if (!department) return { status: 400, error: 'Department not found' };
     return { department };
   }
   const name = String(body.Department || '').trim().replace(/\s+/g, ' ');
   if (!name) return { status: 400, error: 'Department is required' };
-  let department = await DepartmentModel.findByName(name);
+  let department = await DepartmentModel.findByName(name, req.user.organizationId);
   if (!department) {
-    const id = await DepartmentModel.create({ name });
+    const id = await DepartmentModel.create(req.user.organizationId, { name });
     AuditLogModel.insertLog({ userId: req.user.id, actions: 'CREATE_DEPARTMENT', descriptions: `Department ${name} created by ${req.user.email}` },
       (logErr) => { if (logErr) console.error('Failed to insert audit log:', logErr); });
-    department = await DepartmentModel.findById(id);
+    department = await DepartmentModel.findById(id, req.user.organizationId);
   }
   return { department };
 }
@@ -49,7 +50,7 @@ function departmentFilter(value) {
 class EmployeeController {
   // Get all employees
   static getEmployees(req, res) {
-    Employee.getAllEmployees((err, data) => {
+    Employee.getAllEmployees(req.user.organizationId, (err, data) => {
       if (err) {
         console.error('Error fetching employees:', err);
         return res.status(500).json({ error: 'Failed to fetch employees' });
@@ -86,8 +87,9 @@ class EmployeeController {
     if (department.error) return res.status(department.status).json({ error: department.error });
 
     const newEmployee = { FullName, position, ...department, salary, email };
-    Employee.insertEmployee(newEmployee, (err, result) => {
+    Employee.insertEmployee(req.user.organizationId, newEmployee, (err, result) => {
       if (err) {
+        if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Employee email already exists' });
         console.error('Error inserting employee:', err);
         return res.status(500).json({ error: 'Failed to insert employee' });
       }
@@ -117,7 +119,7 @@ class EmployeeController {
     let department;
     try {
       const current = await new Promise((resolve, reject) =>
-        Employee.getEmployeeById(employeeId, (err, row) => (err ? reject(err) : resolve(row))));
+        Employee.getEmployeeById(employeeId, req.user.organizationId, (err, row) => (err ? reject(err) : resolve(row))));
       if (!current) return res.status(404).json({ error: 'Employee not found' });
       department = await departmentFor(req.body, req, current.department_id);
     } catch (err) {
@@ -128,7 +130,7 @@ class EmployeeController {
 
     const updatedData = { FullName, position, ...department, salary };
 
-    Employee.updateEmployee(employeeId, updatedData, (err, result) => {
+    Employee.updateEmployee(employeeId, req.user.organizationId, updatedData, (err, result) => {
       if (err) {
         console.error('Error updating employee:', err);
         return res.status(500).json({ error: 'Failed to update employee' });
@@ -139,7 +141,7 @@ class EmployeeController {
       }
 
       // Someone who moved to another department no longer heads their old one
-      DepartmentModel.clearHeadElsewhere(employeeId, department.department_id)
+      DepartmentModel.clearHeadElsewhere(req.user.organizationId, employeeId, department.department_id)
         .catch((headErr) => console.error('Failed to clear head of department:', headErr.message));
 
       // Log this action
@@ -161,12 +163,12 @@ class EmployeeController {
 
     // The demo employee's record backs a public demo login
     try {
-      if ((await employeeProtection(employeeId)).protected) return sendDemoProtected(res);
+      if ((await employeeProtection(employeeId, req.user.organizationId)).protected) return sendDemoProtected(res);
     } catch (err) {
       return res.status(500).json({ error: 'Server error' });
     }
 
-    Employee.deleteEmployee(employeeId, (err, result) => {
+    Employee.deleteEmployee(employeeId, req.user.organizationId, (err, result) => {
       if (err) {
         console.error('Error deleting employee:', err);
         return res.status(500).json({ error: 'Failed to delete employee' });
@@ -198,12 +200,16 @@ class EmployeeController {
     if (userId !== null && !Number.isInteger(userId)) return res.status(400).json({ error: 'user_id must be a number or null' });
 
     try {
-      const user = userId !== null ? await UserModel.findUserById(userId) : null;
+      // Both the record and the account must belong to the user's organisation (404 otherwise)
+      const exists = await new Promise((resolve, reject) =>
+        Employee.getEmployeeById(employeeId, req.user.organizationId, (err, row) => (err ? reject(err) : resolve(row))));
+      if (!exists) return res.status(404).json({ error: 'Employee not found' });
+      const user = userId !== null ? await UserModel.findUserInScope(userId, req.user.organizationId) : null;
       if (userId !== null && !user) {
         return res.status(404).json({ error: 'User not found' });
       }
       // Demo accounts: the only allowed change is (re)linking a demo record to its own demo account
-      const record = await employeeProtection(employeeId);
+      const record = await employeeProtection(employeeId, req.user.organizationId);
       if (record.protected || (user && isProtectedEmail(user.email))) {
         const restoresOwnLink = user && record.email && user.email.toLowerCase() === String(record.email).toLowerCase();
         if (!restoresOwnLink) return sendDemoProtected(res);
@@ -212,7 +218,7 @@ class EmployeeController {
       return res.status(500).json({ error: 'Server error' });
     }
 
-    Employee.setUser(employeeId, userId, (err, result) => {
+    Employee.setUser(employeeId, req.user.organizationId, userId, (err, result) => {
       if (err) {
         if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'That account is already linked to another employee' });
         console.error('Error linking employee:', err);
@@ -236,7 +242,7 @@ class EmployeeController {
   static getEmployeeById(req, res) {
     const employeeId = req.params.id;
 
-    Employee.getEmployeeById(employeeId, (err, employee) => {
+    Employee.getEmployeeById(employeeId, req.user.organizationId, (err, employee) => {
       if (err) {
         console.error('Error fetching employee:', err);
         return res.status(500).json({ error: 'Failed to fetch employee' });

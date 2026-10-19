@@ -7,8 +7,11 @@ const db = require('../config/db');
 const crypto = require('crypto');
 const AuditLogModel = require('../models/auditLogModel');
 const PasswordResetModel = require('../models/passwordResetModel');
-const { ROLES, PUBLIC_SIGNUP_ROLES, DEFAULT_ROLE, passwordProblem } = require('../config/roles');
+const { ROLES, DEFAULT_ROLE, passwordProblem } = require('../config/roles');
 const { isProtectedEmail, isProtectedUserId, sendDemoProtected } = require('../config/demoAccounts');
+const OrganizationModel = require('../models/organizationModel');
+const { organisationBlock } = require('../middleware/authMiddleware');
+const { ANY_ORG } = UserModel;
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 const RESET_LINK_TTL_MINUTES = Number(process.env.RESET_LINK_TTL_MINUTES) || 60;
@@ -24,20 +27,63 @@ function signToken(user) {
   );
 }
 
-function audit(userId, actions, descriptions) {
-  AuditLogModel.insertLog({ userId, actions, descriptions }, (logErr) => {
+// organizationId: the organisation the event belongs to (defaults to the acting user's own)
+function audit(userId, actions, descriptions, organizationId) {
+  const entry = { userId, actions, descriptions };
+  if (organizationId !== undefined) entry.organizationId = organizationId;
+  AuditLogModel.insertLog(entry, (logErr) => {
     if (logErr) console.error(`Failed to log ${actions}:`, logErr.message);
   });
 }
 
+// Which accounts the signed-in user may manage. Org admins: their own organisation. The platform
+// owner (only reaches these handlers through /api/platform/*): any organisation's accounts,
+// never another owner. Both come from the database-loaded account, never from the request.
+function scopeOf(req) {
+  return req.user.role === 'owner' ? ANY_ORG : req.user.organizationId;
+}
+
+// The user object returned to the frontend after login / password change
+function publicUser(user, organization) {
+  return {
+    id: user.id, username: user.username, email: user.email, role: user.role,
+    mustChangePassword: Boolean(user.must_change_password),
+    organization: organization || null,
+  };
+}
+
+// Login lookup: the account plus its organisation's status
+function findLoginAccount(email) {
+  return new Promise((resolve, reject) => {
+    db.query(
+      `SELECT u.*, o.name AS organization_name, o.slug AS organization_slug, o.status AS organization_status
+       FROM users u LEFT JOIN organizations o ON o.id = u.organization_id WHERE u.email = ?`,
+      [email],
+      (err, rows) => (err ? reject(err) : resolve(rows[0] || null))
+    );
+  });
+}
+
 class UserController {
-  // Register new user.
-  // Public sign-up may only create 'employee' or 'hr' accounts; a signed-in admin
-  // (optionalAuth sets req.user) may also create 'admin' accounts.
+  // There is no anonymous self-sign-up: an employee cannot join an organisation on their own.
+  // Accounts are created inside the signed-in admin's (or HR's) organisation. New organisations
+  // sign up through POST /api/organizations/register instead.
+  static requireAccountCreator(req, res, next) {
+    if (!req.user || !['admin', 'hr'].includes(req.user.role)) {
+      return res.status(403).json({
+        error: "Accounts are created by your organisation's admin or HR team. Ask them for an account, or register your organisation.",
+        code: 'SELF_SIGNUP_CLOSED',
+      });
+    }
+    next();
+  }
+
+  // Register new user (admin: any organisation role; HR: employee accounts), in the creator's
+  // organisation. The organisation's seat limit (active accounts) is enforced.
   static async register(req, res) {
     const { username, email, password } = req.body;
     const role = (req.body.role || DEFAULT_ROLE).toString().trim().toLowerCase();
-    const isAdmin = req.user?.role === 'admin';
+    const isAdmin = req.user.role === 'admin';
 
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Username, email and password are required' });
@@ -49,39 +95,33 @@ class UserController {
     if (!ROLES.includes(role)) {
       return res.status(400).json({ error: `Invalid role. Must be one of: ${ROLES.join(', ')}` });
     }
-    if (!isAdmin && !PUBLIC_SIGNUP_ROLES.includes(role)) {
+    if (!isAdmin && role !== 'employee') {
       return res.status(403).json({ error: 'HR and admin accounts can only be created by an existing admin.' });
     }
 
     try {
-      // Check if user already exists
+      // Check if user already exists (e-mail addresses are unique across the platform: they are the login)
       const existingUser = await UserModel.findUserByEmail(email);
       if (existingUser) return res.status(409).json({ error: 'Email already exists' });
 
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      const newUser = { username, email, password: hashedPassword, role };
+      const newUserId = await OrganizationModel.insertUser(req.user.organizationId, { username, email, password: hashedPassword, role });
 
-      UserModel.registerUser(newUser, (err, result) => {
-        if (err) {
-          console.error('Error registering user:', err.message);
-          return res.status(500).json({ error: 'Failed to register user' });
-        }
-
-        AuditLogModel.insertLog({
-          userId: req.user?.id || result.insertId,
-          actions: 'REGISTER_USER',
-          descriptions: isAdmin
-            ? `User ${email} (${role}) created by ${req.user.email}`
-            : `User ${email} registered as ${role}`
-        }, (logErr) => {
-          if (logErr) console.error('Failed to insert audit log:', logErr.message);
-        });
-
-        res.status(201).json({ message: 'User registered successfully', userId: result.insertId });
+      AuditLogModel.insertLog({
+        userId: req.user.id,
+        organizationId: req.user.organizationId,
+        actions: 'REGISTER_USER',
+        descriptions: `User ${email} (${role}) created by ${req.user.email}`
+      }, (logErr) => {
+        if (logErr) console.error('Failed to insert audit log:', logErr.message);
       });
 
+      res.status(201).json({ message: 'User registered successfully', userId: newUserId });
+
     } catch (err) {
+      if (err.code === 'SEAT_LIMIT_REACHED') return res.status(409).json({ error: err.message, code: err.code });
+      if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Email already exists' });
       console.error('Error during registration:', err);
       return res.status(500).json({ error: 'Server error' });
     }
@@ -99,12 +139,15 @@ class UserController {
       return res.status(400).json({ error: 'You cannot change your own role' });
     }
     try {
-      if (await isProtectedUserId(userId)) return sendDemoProtected(res);
+      // Accounts of other organisations do not exist as far as this admin is concerned (404)
+      const target = await UserModel.findUserInScope(userId, scopeOf(req));
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      if (isProtectedEmail(target.email)) return sendDemoProtected(res);
     } catch (err) {
       return res.status(500).json({ error: 'Server error' });
     }
 
-    UserModel.updateUserRole(userId, { role }, (err, result) => {
+    UserModel.updateUserRole(userId, scopeOf(req), { role }, (err, result) => {
       if (err) {
         console.error('Error updating user role:', err);
         return res.status(500).json({ error: 'Failed to update user role' });
@@ -134,7 +177,7 @@ class UserController {
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
     try {
-      const user = await UserModel.findUserByEmail(String(email));
+      const user = await findLoginAccount(String(email));
       const passwordMatch = await bcrypt.compare(String(password), user ? user.password : DUMMY_HASH);
       if (!user || !passwordMatch) return res.status(401).json({ error: 'Invalid credentials' });
 
@@ -142,6 +185,10 @@ class UserController {
       if (!user.is_active) {
         return res.status(403).json({ error: 'This account has been deactivated. Please contact an administrator.', code: 'ACCOUNT_DEACTIVATED' });
       }
+
+      // Organisation not approved yet, or suspended: a clear message, no token
+      const blocked = organisationBlock(user);
+      if (blocked) return res.status(403).json(blocked);
 
       const token = signToken(user);
 
@@ -157,10 +204,9 @@ class UserController {
       res.status(200).json({
         message: 'Login successful',
         token,
-        user: {
-          id: user.id, username: user.username, email: user.email, role: user.role,
-          mustChangePassword: Boolean(user.must_change_password)
-        }
+        user: publicUser(user, user.organization_id
+          ? { id: user.organization_id, name: user.organization_name, slug: user.organization_slug }
+          : null)
       });
 
     } catch (err) {
@@ -173,8 +219,9 @@ class UserController {
     const query = `SELECT u.id, u.username, u.email, u.role, u.is_active, u.must_change_password, u.created_at,
         e.id AS employee_id, e.FullName AS employee_name
       FROM users u LEFT JOIN employees e ON e.user_id = u.id
+      WHERE u.organization_id = ?
       ORDER BY u.id`;
-    db.query(query, (err, results) => {
+    db.query(query, [req.user.organizationId], (err, results) => {
       if (err) return res.status(500).json({ error: 'Server error' });
       res.json(results);
     });
@@ -188,12 +235,14 @@ class UserController {
       return res.status(400).json({ error: 'You cannot delete your own account' });
     }
     try {
-      if (await isProtectedUserId(userId)) return sendDemoProtected(res);
+      const target = await UserModel.findUserInScope(userId, scopeOf(req));
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      if (isProtectedEmail(target.email)) return sendDemoProtected(res);
     } catch (err) {
       return res.status(500).json({ error: 'Server error' });
     }
 
-    UserModel.deleteUser(userId, (err, result) => {
+    UserModel.deleteUser(userId, scopeOf(req), (err, result) => {
       if (err) {
         console.error('Error deleting user:', err);
         return res.status(500).json({ error: 'Failed to delete user' });
@@ -265,7 +314,7 @@ class UserController {
 
   // The employee record linked to the signed-in account, if any
   static myEmployeeRecord(req, res) {
-    db.query('SELECT * FROM employees WHERE user_id = ?', [req.user.id], (err, rows) => {
+    db.query('SELECT * FROM employees WHERE user_id = ? AND organization_id = ?', [req.user.id, req.user.organizationId], (err, rows) => {
       if (err) {
         console.error('Error fetching own employee record:', err);
         return res.status(500).json({ error: 'Failed to fetch employee record' });
@@ -279,8 +328,9 @@ class UserController {
   static linkableUsers(req, res) {
     const query = `SELECT u.id, u.username, u.email, u.role, e.id AS employee_id
       FROM users u LEFT JOIN employees e ON e.user_id = u.id
+      WHERE u.organization_id = ?
       ORDER BY u.username`;
-    db.query(query, (err, rows) => {
+    db.query(query, [req.user.organizationId], (err, rows) => {
       if (err) return res.status(500).json({ error: 'Server error' });
       res.json(rows);
     });
@@ -329,7 +379,7 @@ class UserController {
         res.json({
           message: 'Password changed successfully',
           token,
-          user: { id: user.id, username: user.username, email: user.email, role: user.role, mustChangePassword: false }
+          user: { ...publicUser({ ...user, must_change_password: 0 }, req.user.organization) }
         });
       });
     } catch (err) {
@@ -348,20 +398,36 @@ class UserController {
     if (String(userId) === String(req.user.id)) {
       return res.status(400).json({ error: 'You cannot deactivate your own account' });
     }
+    let target;
     try {
-      if (await isProtectedUserId(userId)) return sendDemoProtected(res);
+      target = await UserModel.findUserInScope(userId, scopeOf(req));
+      if (!target) return res.status(404).json({ error: 'User not found' });
+      if (isProtectedEmail(target.email)) return sendDemoProtected(res);
     } catch (err) {
       return res.status(500).json({ error: 'Server error' });
     }
-    UserModel.setActive(userId, is_active, (err, result) => {
+    const done = (result) => {
+      if (!result) return res.status(404).json({ error: 'User not found' });
+      audit(req.user.id, is_active ? 'ACTIVATE_USER' : 'DEACTIVATE_USER',
+        `User ${target.email} (${target.id}) ${is_active ? 'activated' : 'deactivated'} by ${req.user.email}`, target.organization_id);
+      res.json({ message: is_active ? 'User activated' : 'User deactivated' });
+    };
+    if (is_active) {
+      // Reactivation takes a seat: the organisation's seat limit applies
+      try {
+        return done(await OrganizationModel.activateUser(target.organization_id, target.id));
+      } catch (err) {
+        if (err.code === 'SEAT_LIMIT_REACHED') return res.status(409).json({ error: err.message, code: err.code });
+        console.error('Error updating user status:', err.message);
+        return res.status(500).json({ error: 'Failed to update user status' });
+      }
+    }
+    UserModel.setActive(target.id, scopeOf(req), false, (err, result) => {
       if (err) {
         console.error('Error updating user status:', err.message);
         return res.status(500).json({ error: 'Failed to update user status' });
       }
-      if (result.affectedRows === 0) return res.status(404).json({ error: 'User not found' });
-      audit(req.user.id, is_active ? 'ACTIVATE_USER' : 'DEACTIVATE_USER',
-        `User ${userId} ${is_active ? 'activated' : 'deactivated'} by ${req.user.email}`);
-      res.json({ message: is_active ? 'User activated' : 'User deactivated' });
+      done(result.affectedRows);
     });
   }
 
@@ -378,7 +444,7 @@ class UserController {
     if (problem) return res.status(400).json({ error: problem });
 
     try {
-      const user = await UserModel.findUserById(userId);
+      const user = await UserModel.findUserInScope(userId, scopeOf(req));
       if (!user) return res.status(404).json({ error: 'User not found' });
       if (isProtectedEmail(user.email)) return sendDemoProtected(res);
       const hashed = await bcrypt.hash(tempPassword, 10);
@@ -387,7 +453,7 @@ class UserController {
           console.error('Error setting temporary password:', err.message);
           return res.status(500).json({ error: 'Failed to reset password' });
         }
-        audit(req.user.id, 'RESET_PASSWORD', `Temporary password issued for user ${user.id} by ${req.user.email}`);
+        audit(req.user.id, 'RESET_PASSWORD', `Temporary password issued for user ${user.email} (${user.id}) by ${req.user.email}`, user.organization_id);
         res.json({
           message: 'Temporary password set. The user must change it at next sign-in.',
           ...(supplied ? {} : { temporaryPassword: tempPassword })
@@ -403,7 +469,7 @@ class UserController {
   static async createResetLink(req, res) {
     const userId = req.params.id;
     try {
-      const user = await UserModel.findUserById(userId);
+      const user = await UserModel.findUserInScope(userId, scopeOf(req));
       if (!user) return res.status(404).json({ error: 'User not found' });
       if (isProtectedEmail(user.email)) return sendDemoProtected(res);
       if (!user.is_active) return res.status(400).json({ error: 'Activate the account before resetting its password' });
@@ -412,7 +478,7 @@ class UserController {
           console.error('Error creating reset link:', err.message);
           return res.status(500).json({ error: 'Failed to create reset link' });
         }
-        audit(req.user.id, 'RESET_LINK_CREATED', `Password reset link created for user ${user.id} by ${req.user.email}`);
+        audit(req.user.id, 'RESET_LINK_CREATED', `Password reset link created for user ${user.email} (${user.id}) by ${req.user.email}`, user.organization_id);
         res.status(201).json({ token: data.token, expiresAt: data.expiresAt });
       });
     } catch (err) {

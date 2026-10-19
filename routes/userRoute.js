@@ -15,8 +15,9 @@ const handleValidation = (req, res, next) => {
   next();
 };
 
-// Route to register a user (Public: employee only; an admin token may also create hr/admin)
-router.post('/register', authLimiter, optionalAuth, userValidation, handleValidation, UserController.register);
+// Route to register a user in the caller's organisation (admin: any role; HR: employee accounts).
+// Kept at this path for the frontend; anonymous self-sign-up is closed (403 SELF_SIGNUP_CLOSED).
+router.post('/register', authLimiter, optionalAuth, UserController.requireAccountCreator, userValidation, handleValidation, UserController.register);
 
 // Route to login a user (Public)
 router.post('/login', authLimiter, UserController.login);

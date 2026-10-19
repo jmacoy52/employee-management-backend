@@ -1,7 +1,12 @@
 #!/usr/bin/env node
-// Creates the first admin account for a new (non-demo) deployment.
+// Creates an organisation admin from the command line (e.g. a client set up by hand).
 //
-//   npm run create-admin -- --email admin@yourorg.org --name "Ama Owusu"
+//   npm run create-admin -- --org "Accra Logistics Ltd" --email admin@yourorg.org --name "Ama Owusu"
+//
+// Organisation: --org "Name" creates a new, already active organisation (ADMIN_ORG works too);
+// --org-slug slug adds the admin to an existing organisation instead.
+// Usually you do not need this: organisations register on the website and the platform owner
+// approves them, or the owner creates them in the owner console.
 //
 // Email and name: --email / --name, or ADMIN_EMAIL / ADMIN_NAME.
 // Password: ADMIN_PASSWORD, otherwise you are asked for it twice (input hidden).
@@ -14,6 +19,7 @@ const bcrypt = require('bcryptjs');
 const mysql = require('mysql2/promise');
 const { buildDbConfig } = require('../config/dbConfig');
 const { passwordProblem } = require('../config/roles');
+const { uniqueSlug } = require('../config/slug');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -25,10 +31,10 @@ function argValue(argv, flag) {
 }
 
 // Reads a line from the terminal without echoing it
-function promptHidden(question) {
+function promptHidden(question, envName = 'ADMIN_PASSWORD') {
   return new Promise((resolve, reject) => {
     const { stdin, stdout } = process;
-    if (!stdin.isTTY) return reject(new Error('Set ADMIN_PASSWORD (no terminal to ask for it).'));
+    if (!stdin.isTTY) return reject(new Error(`Set ${envName} (no terminal to ask for it).`));
     stdout.write(question);
     stdin.setRawMode(true);
     stdin.resume();
@@ -55,7 +61,7 @@ function promptHidden(question) {
 }
 
 // Validates and inserts the admin. Returns { id, email }. Throws with a readable message.
-async function createAdmin(conn, { email, name, password }) {
+async function createAdmin(conn, { email, name, password, org, orgSlug }) {
   const cleanEmail = String(email || '').trim().toLowerCase();
   const cleanName = String(name || '').trim();
   if (!EMAIL_RE.test(cleanEmail)) throw new Error('A valid --email (or ADMIN_EMAIL) is required.');
@@ -63,24 +69,52 @@ async function createAdmin(conn, { email, name, password }) {
   const problem = passwordProblem(password);
   if (problem) throw new Error(problem);
 
+  const orgName = String(org || '').trim().replace(/\s+/g, ' ');
+  const slug = String(orgSlug || '').trim().toLowerCase();
+  if (!slug && (orgName.length < 2 || orgName.length > 150)) throw new Error('--org "Organisation name" (2 to 150 characters) or --org-slug is required.');
+
   const [existing] = await conn.query('SELECT id FROM users WHERE email = ?', [cleanEmail]);
   if (existing.length) throw new Error(`An account with email ${cleanEmail} already exists; nothing was changed.`);
 
   const hash = await bcrypt.hash(String(password), 10);
-  const [result] = await conn.query(
-    "INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, 'admin')",
-    [cleanName, cleanEmail, hash]
-  );
-  await conn.query(
-    "INSERT INTO audit_logs (UserId, actions, descriptions) VALUES (?, 'CREATE_ADMIN', ?)",
-    [result.insertId, `Admin ${cleanEmail} created with the create-admin script`]
-  );
-  return { id: result.insertId, email: cleanEmail };
+  await conn.query('START TRANSACTION');
+  try {
+    let organizationId;
+    if (slug) {
+      const [[found]] = await conn.query('SELECT id FROM organizations WHERE slug = ?', [slug]);
+      if (!found) throw new Error(`No organisation with slug ${slug}; nothing was changed.`);
+      organizationId = found.id;
+    } else {
+      const newSlug = await uniqueSlug(conn, orgName);
+      const [org] = await conn.query(
+        "INSERT INTO organizations (name, slug, status, contact_email, approved_at) VALUES (?, ?, 'active', ?, CURRENT_TIMESTAMP)",
+        [orgName, newSlug, cleanEmail]
+      );
+      organizationId = org.insertId;
+    }
+    const [result] = await conn.query(
+      "INSERT INTO users (organization_id, username, email, password, role) VALUES (?, ?, ?, ?, 'admin')",
+      [organizationId, cleanName, cleanEmail, hash]
+    );
+    await conn.query(
+      "INSERT INTO audit_logs (organization_id, UserId, actions, descriptions) VALUES (?, ?, 'CREATE_ADMIN', ?)",
+      [organizationId, result.insertId, `Admin ${cleanEmail} created with the create-admin script`]
+    );
+    await conn.query('COMMIT');
+    return { id: result.insertId, email: cleanEmail, organizationId };
+  } catch (err) {
+    await conn.query('ROLLBACK');
+    throw err;
+  }
 }
 
 async function main(argv = process.argv.slice(2)) {
   const email = argValue(argv, '--email') || process.env.ADMIN_EMAIL;
   const name = argValue(argv, '--name') || process.env.ADMIN_NAME;
+  const org = argValue(argv, '--org') || process.env.ADMIN_ORG;
+  const orgSlug = argValue(argv, '--org-slug') || process.env.ADMIN_ORG_SLUG;
+  const orgError = (!org && !orgSlug) ? '--org "Organisation name" or --org-slug is required.' : null;
+  if (orgError) throw new Error(orgError);
   let password = process.env.ADMIN_PASSWORD;
   if (!password) {
     password = await promptHidden('Password for the new admin: ');
@@ -90,8 +124,8 @@ async function main(argv = process.argv.slice(2)) {
 
   const conn = await mysql.createConnection(buildDbConfig());
   try {
-    const admin = await createAdmin(conn, { email, name, password });
-    console.log(`Created admin ${admin.email} (user id ${admin.id}). Sign in and change the password if it was shared.`);
+    const admin = await createAdmin(conn, { email, name, password, org, orgSlug });
+    console.log(`Created admin ${admin.email} (user id ${admin.id}, organisation id ${admin.organizationId}). Sign in and change the password if it was shared.`);
   } finally {
     await conn.end();
   }
@@ -104,4 +138,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createAdmin, main };
+module.exports = { createAdmin, main, argValue, promptHidden };

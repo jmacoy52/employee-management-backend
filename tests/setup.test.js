@@ -63,23 +63,42 @@ test('demo protection follows DEMO_MODE', () => {
 test('createAdmin validates input, hashes the password and refuses duplicates', async () => {
   await resetDatabase({ seed: false });
   const { createAdmin } = require('../scripts/create-admin');
-  await assert.rejects(createAdmin(conn, { email: 'bad', name: 'Ama Owusu', password: 'Passw0rd123' }), /valid --email/);
-  await assert.rejects(createAdmin(conn, { email: 'ama@example.org', name: 'A', password: 'Passw0rd123' }), /--name/);
-  await assert.rejects(createAdmin(conn, { email: 'ama@example.org', name: 'Ama Owusu', password: 'short' }), /at least 8/);
-  const admin = await createAdmin(conn, { email: ' Ama@Example.org ', name: 'Ama Owusu', password: 'Passw0rd123' });
-  const [[row]] = await conn.query('SELECT email, role, password FROM users WHERE id = ?', [admin.id]);
+  const org = 'Accra Logistics Ltd';
+  await assert.rejects(createAdmin(conn, { email: 'bad', name: 'Ama Owusu', password: 'Passw0rd123', org }), /valid --email/);
+  await assert.rejects(createAdmin(conn, { email: 'ama@example.org', name: 'A', password: 'Passw0rd123', org }), /--name/);
+  await assert.rejects(createAdmin(conn, { email: 'ama@example.org', name: 'Ama Owusu', password: 'short', org }), /at least 8/);
+  await assert.rejects(createAdmin(conn, { email: 'ama@example.org', name: 'Ama Owusu', password: 'Passw0rd123' }), /--org/);
+  const admin = await createAdmin(conn, { email: ' Ama@Example.org ', name: 'Ama Owusu', password: 'Passw0rd123', org });
+  const [[row]] = await conn.query('SELECT u.email, u.role, u.password, o.slug, o.status FROM users u JOIN organizations o ON o.id = u.organization_id WHERE u.id = ?', [admin.id]);
   assert.equal(row.email, 'ama@example.org');
   assert.equal(row.role, 'admin');
+  assert.deepEqual([row.slug, row.status], ['accra-logistics-ltd', 'active']);
   assert.match(row.password, /^\$2[aby]\$10\$/);
-  await assert.rejects(createAdmin(conn, { email: 'ama@example.org', name: 'Ama Owusu', password: 'Passw0rd123' }), /already exists/);
+  await assert.rejects(createAdmin(conn, { email: 'ama@example.org', name: 'Ama Owusu', password: 'Passw0rd123', org }), /already exists/);
+  // --org-slug joins an existing organisation
+  const second = await createAdmin(conn, { email: 'kojo@example.org', name: 'Kojo Owusu', password: 'Passw0rd123', orgSlug: 'accra-logistics-ltd' });
+  assert.equal(second.organizationId, admin.organizationId);
+  await assert.rejects(createAdmin(conn, { email: 'x@example.org', name: 'Xx Yy', password: 'Passw0rd123', orgSlug: 'nope' }), /No organisation/);
   const [[log]] = await conn.query("SELECT COUNT(*) n FROM audit_logs WHERE actions = 'CREATE_ADMIN'");
-  assert.equal(log.n, 1);
+  assert.equal(log.n, 2);
+});
+
+test('createOwner: strong password, single owner unless --additional, no organisation', async () => {
+  await resetDatabase({ seed: false });
+  const { createOwner } = require('../scripts/create-owner');
+  await assert.rejects(createOwner(conn, { email: 'jo@example.org', name: 'Jo Doe', password: 'Short1pass' }), /at least 12/);
+  await assert.rejects(createOwner(conn, { email: 'jo@example.org', name: 'Jo Doe', password: 'aaaaaaaaaaa1' }), /repetitive/);
+  const owner = await createOwner(conn, { email: 'jo@example.org', name: 'Jo Doe', password: 'Long-Owner-Pass-2026' });
+  const [[row]] = await conn.query('SELECT role, organization_id FROM users WHERE id = ?', [owner.id]);
+  assert.deepEqual({ ...row }, { role: 'owner', organization_id: null });
+  await assert.rejects(createOwner(conn, { email: 'two@example.org', name: 'Two Doe', password: 'Long-Owner-Pass-2026' }), /already exists/);
+  await createOwner(conn, { email: 'two@example.org', name: 'Two Doe', password: 'Long-Owner-Pass-2026', additional: true });
 });
 
 test('npm run create-admin never prints the password, and the admin can sign in', async () => {
   await resetDatabase({ seed: false });
   const secret = 'Unique-Pass-4821';
-  const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'create-admin.js'), '--email', 'kofi@example.org', '--name', 'Kofi Boateng'], {
+  const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'create-admin.js'), '--email', 'kofi@example.org', '--name', 'Kofi Boateng', '--org', 'Kumasi Traders'], {
     env: { ...process.env, ADMIN_PASSWORD: secret },
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -90,7 +109,7 @@ test('npm run create-admin never prints the password, and the admin can sign in'
   // No terminal and no ADMIN_PASSWORD -> clear error, nothing created
   let failed;
   try {
-    execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'create-admin.js'), '--email', 'x@example.org', '--name', 'Xx'], {
+    execFileSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'create-admin.js'), '--email', 'x@example.org', '--name', 'Xx', '--org', 'Some Org'], {
       env: { ...process.env, ADMIN_PASSWORD: '' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
     });
   } catch (err) {
@@ -103,5 +122,6 @@ test('npm run create-admin never prints the password, and the admin can sign in'
   const r = await request(app).post('/api/users/login').send({ email: 'kofi@example.org', password: secret });
   assert.equal(r.status, 200);
   assert.equal(r.body.user.role, 'admin');
+  assert.equal(r.body.user.organization.name, 'Kumasi Traders');
   require('../config/db').end();
 });
