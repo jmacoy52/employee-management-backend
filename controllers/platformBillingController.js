@@ -52,6 +52,14 @@ class PlatformBillingController {
     }
   }
 
+  static async settings(req, res) {
+    try {
+      res.json(await billing.paymentsSettings());
+    } catch (err) {
+      fail(res, err, 'load the payment settings');
+    }
+  }
+
   static async coupons(req, res) {
     try {
       res.json(await billing.listCoupons());
@@ -73,5 +81,11 @@ PlatformBillingController.subscription = withOrg('load the subscription', (id) =
 PlatformBillingController.extendTrial = withOrg('extend the trial', (id, req) => billing.extendTrial(id, (req.body || {}).days, req.user));
 PlatformBillingController.assignPlan = withOrg('assign the plan', (id, req) => billing.assignPlan(id, req.body || {}, req.user));
 PlatformBillingController.foundingDiscount = withOrg('apply the discount', (id, req) => billing.applyFoundingDiscount(id, req.user));
+
+PlatformBillingController.endTrial = withOrg('end the trial', (id, req) => billing.endTrialNow(id, req.body || {}, req.user));
+PlatformBillingController.markPaid = withOrg('record the payment', (id, req) => billing.markPaid(id, req.body || {}, req.user));
+PlatformBillingController.cancel = withOrg('cancel the subscription', (id, req) => billing.cancelSubscription(id, req.body || {}, req.user));
+PlatformBillingController.pause = withOrg('pause the subscription', (id, req) => billing.pauseSubscription(id, req.body || {}, req.user));
+PlatformBillingController.resume = withOrg('resume the subscription', (id, req) => billing.resumeSubscription(id, req.user));
 
 module.exports = PlatformBillingController;

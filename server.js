@@ -83,6 +83,7 @@ if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Server is running on ${PORT}`);
   });
+  require('./services/billingScheduler').start();
 }
 
 module.exports = app;

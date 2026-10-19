@@ -37,6 +37,7 @@ router.post('/admins/:id/reset-link', PlatformController.requireOrgAdminTarget, 
 // Subscriptions: revenue overview, plans (prices and limits, no code change needed), discounts and
 // per-organisation actions. All changes are audit-logged with scope 'platform'.
 router.get('/billing', PlatformBillingController.revenue);
+router.get('/billing/settings', PlatformBillingController.settings);
 router.get('/plans', PlatformBillingController.plans);
 router.put('/plans/:code', PlatformBillingController.updatePlan);
 router.get('/coupons', PlatformBillingController.coupons);
@@ -45,6 +46,11 @@ router.get('/organizations/:id/subscription', PlatformBillingController.subscrip
 router.post('/organizations/:id/subscription/extend-trial', PlatformBillingController.extendTrial);
 router.post('/organizations/:id/subscription/assign', PlatformBillingController.assignPlan);
 router.post('/organizations/:id/subscription/founding-discount', PlatformBillingController.foundingDiscount);
+router.post('/organizations/:id/subscription/end-trial', PlatformBillingController.endTrial);
+router.post('/organizations/:id/subscription/mark-paid', PlatformBillingController.markPaid);
+router.post('/organizations/:id/subscription/cancel', PlatformBillingController.cancel);
+router.post('/organizations/:id/subscription/pause', PlatformBillingController.pause);
+router.post('/organizations/:id/subscription/resume', PlatformBillingController.resume);
 
 // Platform-level audit log: owner actions and organisation-level events only (scope 'platform')
 router.get('/audit-logs', PlatformController.auditLogs);

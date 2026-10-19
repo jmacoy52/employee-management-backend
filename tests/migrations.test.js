@@ -16,7 +16,7 @@ test('migrations upgrade a populated v1 database without data loss and are idemp
   await conn.query("INSERT INTO audit_logs (UserId, actions, descriptions) VALUES (?, 'LOGIN', 'User Old Admin logged in'), (?, 'CREATE_ADMIN', 'First admin created'), (?, 'CREATE_EMPLOYEE', 'Employee added')", [oldAdmin.id, oldAdmin.id, oldAdmin.id]);
   const [[before]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   const ran = await runMigrations(conn, { log: () => {} });
-  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql', '006_org_signup_details_enquiries.sql', '007_payroll.sql', '008_audit_scope_last_login.sql', '009_subscriptions.sql']);
+  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql', '006_org_signup_details_enquiries.sql', '007_payroll.sql', '008_audit_scope_last_login.sql', '009_subscriptions.sql', '010_billing_owner_controls.sql']);
   const [[afterCounts]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   assert.deepEqual(afterCounts, before);
   const [[flags]] = await conn.query('SELECT MIN(is_active) a, MAX(token_version) v, MAX(must_change_password) m FROM users');

@@ -100,7 +100,7 @@ async function getSubscription(organizationId, conn = pool, { lock = false } = {
 
 // The plan whose limits and features apply now. Grace keeps the paid plan working; Free is Free.
 function effectivePlanCode(sub) {
-  return sub.status === 'free' ? B.FREE_PLAN : sub.plan_code;
+  return sub.status === 'free' || sub.status === 'paused' ? B.FREE_PLAN : sub.plan_code;
 }
 
 // Limits and features for a subscription and its effective plan.
@@ -858,7 +858,7 @@ async function revenueOverview() {
        SUM(status = 'trialing') AS trialing,
        SUM(status = 'trialing' AND trial_ends_at IS NOT NULL AND trial_ends_at <= UTC_TIMESTAMP() + INTERVAL 7 DAY) AS trials_ending_7d,
        SUM(status = 'grace') AS grace,
-       SUM(status = 'free') AS free,
+       SUM(status = 'free') AS free, SUM(status = 'paused') AS paused,
        SUM(billing_mode = 'manual' AND status = 'active') AS manual,
        SUM(billing_mode = 'exempt') AS exempt
      FROM organization_subscriptions`
@@ -888,7 +888,7 @@ async function revenueOverview() {
     collectedLast30Days: Number(collected.last30),
     counts: {
       paying: Number(mrr.paying) || 0, trialing: Number(mrr.trialing) || 0, trialsEnding7d: Number(mrr.trials_ending_7d) || 0,
-      grace: Number(mrr.grace) || 0, free: Number(mrr.free) || 0, manual: Number(mrr.manual) || 0, exempt: Number(mrr.exempt) || 0,
+      grace: Number(mrr.grace) || 0, free: Number(mrr.free) || 0, paused: Number(mrr.paused) || 0, manual: Number(mrr.manual) || 0, exempt: Number(mrr.exempt) || 0,
     },
     byPlan: byPlan.map((r) => ({ plan: r.plan_code, name: r.name, organisations: Number(r.organisations), mrr: Math.round(Number(r.mrr)) })),
     recentPayments: payments,
@@ -927,6 +927,202 @@ async function subscriptionSummaries(ids) {
   return Object.fromEntries(rows.map((r) => [r.organization_id, r]));
 }
 
+// ---------- Owner controls (migration 010). Every action is audit-logged with scope 'platform'.
+
+async function stopPaystack(sub) {
+  if (sub.paystack_subscription_code && sub.paystack_email_token && B.paymentsEnabled()) {
+    await paystack.disableSubscription(sub.paystack_subscription_code, sub.paystack_email_token).catch((err) => {
+      throw new BillingError(502, `Could not stop the Paystack subscription: ${err.message}`, 'PAYSTACK_ERROR');
+    });
+  }
+}
+
+async function ownerSub(organizationId) {
+  const sub = await getSubscription(organizationId);
+  if (!sub) throw new BillingError(404, 'Organisation not found', 'NOT_FOUND');
+  assertOwnerMayChange(sub);
+  return sub;
+}
+
+// End a trial now: to the usual 7-day grace period (default) or straight to Free
+async function endTrialNow(organizationId, body, user) {
+  const sub = await ownerSub(organizationId);
+  if (sub.status !== 'trialing') throw new BillingError(409, 'This organisation is not on a trial.', 'NOT_TRIALING');
+  const toFree = (body || {}).to === 'free';
+  const now = new Date();
+  if (toFree) {
+    await pool.query(
+      `UPDATE organization_subscriptions SET plan_code = ?, status = 'free', trial_ends_at = ?, grace_ends_at = NULL, grace_reason = NULL
+       WHERE organization_id = ? AND status = 'trialing'`, [B.FREE_PLAN, now, organizationId]);
+    await pool.query('UPDATE organizations SET plan = ? WHERE id = ?', [B.FREE_PLAN, organizationId]);
+  } else {
+    await pool.query(
+      `UPDATE organization_subscriptions SET status = 'grace', trial_ends_at = ?, grace_reason = 'trial_ended', grace_ends_at = ?
+       WHERE organization_id = ? AND status = 'trialing'`, [now, addDays(now, B.GRACE_DAYS), organizationId]);
+  }
+  await addNotice(pool, organizationId, toFree ? 'trial_ended' : 'grace',
+    toFree ? 'Your free trial has ended and the organisation is now on the Free plan. Your data is kept; choose a plan on the Billing page to get your features back.'
+      : `Your free trial has ended. Choose a plan by ${dateText(addDays(now, B.GRACE_DAYS))} to keep your features; after that the organisation moves to the Free plan. Your data is kept.`,
+    `owner-trial-end:${organizationId}:${now.getTime()}`);
+  audit(organizationId, user.id, 'BILLING_TRIAL_ENDED', `Trial for ${sub.organization_name} ended early by ${user.email}; ${toFree ? 'moved to Free' : `grace period until ${day(addDays(now, B.GRACE_DAYS))}`}`);
+  return { status: toFree ? 'free' : 'grace' };
+}
+
+const MANUAL_METHODS = { cash: 'Cash', momo: 'Mobile money', bank: 'Bank transfer', other: 'Other' };
+
+// Record a payment made outside Paystack (cash, mobile money, bank). Creates a paid invoice and gives the
+// organisation the plan until the end of the period (billing_mode manual; the daily job applies grace afterwards).
+async function markPaid(organizationId, body, user) {
+  body = body || {};
+  const sub = await ownerSub(organizationId);
+  const plan = await getPlan(String(body.plan || ''));
+  if (!plan || plan.code === B.FREE_PLAN) throw new BillingError(400, 'Choose the paid plan this payment is for', 'INVALID_PLAN');
+  const months = Number(body.months);
+  if (!Number.isInteger(months) || months < 1 || months > 36) throw new BillingError(400, 'Period must be 1 to 36 months', 'INVALID_MONTHS');
+  const amount = Math.round(Number(body.amount) * 100);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > 100000000) throw new BillingError(400, 'Enter the amount received in GHS', 'INVALID_AMOUNT');
+  const method = String(body.method || '');
+  if (!MANUAL_METHODS[method]) throw new BillingError(400, 'Choose how it was paid: cash, mobile money, bank transfer or other', 'INVALID_METHOD');
+  const ref = String(body.reference || '').trim().slice(0, 60);
+  const note = String(body.note || '').trim().slice(0, 255) || null;
+  let paidAt = body.paidAt ? new Date(body.paidAt) : new Date();
+  if (Number.isNaN(paidAt.getTime()) || paidAt > addDays(new Date(), 1)) throw new BillingError(400, 'Payment date is not valid', 'INVALID_DATE');
+  // A renewal of the same manual plan continues from the current end date; otherwise the period starts today
+  const now = new Date();
+  const continues = sub.billing_mode === 'manual' && sub.status === 'active' && sub.plan_code === plan.code && sub.manual_until && new Date(sub.manual_until) > now;
+  const start = continues ? new Date(sub.manual_until) : now;
+  const end = addMonths(start, months);
+  await stopPaystack(sub);
+  const conn = await pool.getConnection();
+  let payment;
+  try {
+    await conn.beginTransaction();
+    await conn.query(
+      `UPDATE organization_subscriptions SET plan_code = ?, status = 'active', billing_mode = 'manual', billing_interval = ?, trial_ends_at = NULL,
+         current_period_end = NULL, cancel_at_period_end = 0, grace_ends_at = NULL, grace_reason = NULL, amount_pesewas = NULL,
+         manual_monthly_pesewas = ?, manual_until = ?, note = COALESCE(?, note), paused_at = NULL, paused_from = NULL,
+         paystack_subscription_code = NULL, paystack_email_token = NULL, paystack_plan_code = NULL,
+         last_payment_status = 'success', last_payment_at = ?
+       WHERE organization_id = ?`,
+      [plan.code, months === 12 ? 'yearly' : months === 1 ? 'monthly' : null, Math.round(amount / months), end, note, paidAt, organizationId]
+    );
+    await conn.query('UPDATE organizations SET plan = ? WHERE id = ?', [plan.code, organizationId]);
+    const reference = `MAN-${organizationId}-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const description = `${plan.name}, ${months} month${months === 1 ? '' : 's'} (${day(start)} to ${day(end)}), paid by ${MANUAL_METHODS[method].toLowerCase()}${ref ? `, ref ${ref}` : ''}`;
+    await insertPayment(conn, {
+      organizationId, reference, planCode: plan.code, interval: months === 12 ? 'yearly' : months === 1 ? 'monthly' : null, amount,
+      status: 'success', channel: `manual:${method}`, description, periodStart: start, periodEnd: end, paidAt,
+    });
+    [[payment]] = await conn.query('SELECT id, reference, invoice_number, amount_pesewas, description, period_start, period_end, paid_at FROM billing_payments WHERE reference = ?', [reference]);
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
+  }
+  await addNotice(pool, organizationId, 'payment', `Payment of ${ghs(amount)} received for ${plan.name}. Your plan runs until ${dateText(end)}. The invoice is on the Billing page.`, `manual-paid:${payment.reference}`);
+  audit(organizationId, user.id, 'BILLING_MANUAL_PAYMENT', `Manual payment recorded for ${sub.organization_name} by ${user.email}: ${ghs(amount)} by ${MANUAL_METHODS[method]}${ref ? ` (ref ${ref})` : ''}, ${plan.name} for ${months} month${months === 1 ? '' : 's'} until ${day(end)}, invoice ${payment.invoice_number}${note ? `, note: ${note}` : ''}`);
+  return { payment, until: end };
+}
+
+// Cancel: 'period_end' stops renewal and keeps the plan until the paid period ends; 'now' moves to Free at once
+async function cancelSubscription(organizationId, body, user) {
+  const sub = await ownerSub(organizationId);
+  const when = (body || {}).when === 'now' ? 'now' : 'period_end';
+  if (sub.status === 'free') throw new BillingError(409, 'This organisation is already on Free.', 'ALREADY_FREE');
+  if (when === 'period_end') {
+    if (!(sub.status === 'active' && sub.billing_mode === 'paystack')) {
+      throw new BillingError(409, 'Only an active Paystack subscription can be cancelled at the period end. Use "Cancel now" instead.', 'NOT_RENEWING');
+    }
+    if (sub.cancel_at_period_end) return { status: 'already', endsAt: sub.current_period_end };
+    await stopPaystack(sub);
+    await pool.query('UPDATE organization_subscriptions SET cancel_at_period_end = 1 WHERE organization_id = ?', [organizationId]);
+    audit(organizationId, user.id, 'BILLING_SUBSCRIPTION_CANCELLED', `Renewal of ${sub.organization_name} cancelled by ${user.email}; plan runs until ${day(sub.current_period_end)}`);
+    return { status: 'cancelled', endsAt: sub.current_period_end };
+  }
+  await stopPaystack(sub);
+  await pool.query(
+    `UPDATE organization_subscriptions SET plan_code = ?, status = 'free', billing_mode = 'paystack', billing_interval = NULL, trial_ends_at = NULL,
+       current_period_end = NULL, cancel_at_period_end = 0, grace_ends_at = NULL, grace_reason = NULL, amount_pesewas = NULL,
+       employee_limit_override = NULL, manual_monthly_pesewas = NULL, manual_until = NULL, paused_at = NULL, paused_from = NULL,
+       paystack_subscription_code = NULL, paystack_email_token = NULL, paystack_plan_code = NULL
+     WHERE organization_id = ?`, [B.FREE_PLAN, organizationId]);
+  await pool.query('UPDATE organizations SET plan = ? WHERE id = ?', [B.FREE_PLAN, organizationId]);
+  await addNotice(pool, organizationId, 'cancelled', 'Your subscription was cancelled and the organisation is now on the Free plan. Your data is kept.', `owner-cancel:${organizationId}:${Date.now()}`);
+  audit(organizationId, user.id, 'BILLING_SUBSCRIPTION_CANCELLED', `Subscription of ${sub.organization_name} cancelled now by ${user.email}; moved to Free`);
+  return { status: 'free' };
+}
+
+// Pause: stops Paystack renewals; the organisation gets Free entitlements (data kept) until resumed
+async function pauseSubscription(organizationId, body, user) {
+  const sub = await ownerSub(organizationId);
+  if (sub.status === 'paused') throw new BillingError(409, 'This subscription is already paused.', 'ALREADY_PAUSED');
+  if (sub.status === 'free') throw new BillingError(409, 'This organisation is on Free; there is nothing to pause.', 'ALREADY_FREE');
+  await stopPaystack(sub);
+  const note = String((body || {}).note || '').trim().slice(0, 255) || null;
+  await pool.query(
+    `UPDATE organization_subscriptions SET paused_from = status, status = 'paused', paused_at = UTC_TIMESTAMP(), note = COALESCE(?, note),
+       cancel_at_period_end = IF(billing_mode = 'paystack' AND status = 'active', 1, cancel_at_period_end),
+       paystack_subscription_code = NULL, paystack_email_token = NULL
+     WHERE organization_id = ? AND status <> 'paused'`, [note, organizationId]);
+  await addNotice(pool, organizationId, 'paused', 'Your subscription is paused by EmploCore. Paid features are switched off for now and your data is kept. Contact us to resume.', `owner-pause:${organizationId}:${Date.now()}`);
+  audit(organizationId, user.id, 'BILLING_SUBSCRIPTION_PAUSED', `Subscription of ${sub.organization_name} (${sub.plan_code}, ${sub.status}) paused by ${user.email}${note ? `: ${note}` : ''}`);
+  return { status: 'paused' };
+}
+
+// Resume: back to what it was if that is still valid (trial or paid period not over), otherwise a 7-day grace period
+async function resumeSubscription(organizationId, user) {
+  const sub = await ownerSub(organizationId);
+  if (sub.status !== 'paused') throw new BillingError(409, 'This subscription is not paused.', 'NOT_PAUSED');
+  const now = new Date();
+  const from = sub.paused_from;
+  let status = 'grace';
+  if (from === 'trialing' && sub.trial_ends_at && new Date(sub.trial_ends_at) > now) status = 'trialing';
+  else if (from === 'active' && sub.billing_mode === 'manual' && (!sub.manual_until || new Date(sub.manual_until) > now)) status = 'active';
+  else if (from === 'active' && sub.billing_mode === 'paystack' && sub.current_period_end && new Date(sub.current_period_end) > now) status = 'active';
+  else if (from === 'grace' && sub.grace_ends_at && new Date(sub.grace_ends_at) > now) status = 'grace';
+  const graceEnds = status === 'grace' && !(from === 'grace' && sub.grace_ends_at && new Date(sub.grace_ends_at) > now) ? addDays(now, B.GRACE_DAYS) : null;
+  await pool.query(
+    `UPDATE organization_subscriptions SET status = ?, paused_at = NULL, paused_from = NULL,
+       grace_ends_at = COALESCE(?, grace_ends_at), grace_reason = IF(? IS NULL, grace_reason, 'resumed')
+     WHERE organization_id = ? AND status = 'paused'`, [status, graceEnds, graceEnds, organizationId]);
+  audit(organizationId, user.id, 'BILLING_SUBSCRIPTION_RESUMED', `Subscription of ${sub.organization_name} resumed by ${user.email}: ${status}${graceEnds ? ` until ${day(graceEnds)}` : ''}`);
+  return { status, graceEndsAt: graceEnds };
+}
+
+// Payments settings card: never returns key values, only whether they are set and which mode they are
+function keyMode(key) {
+  if (!key) return null;
+  if (/^sk_live_|^pk_live_/.test(key)) return 'live';
+  if (/^sk_test_|^pk_test_/.test(key)) return 'test';
+  return 'unknown';
+}
+
+async function paymentsSettings() {
+  const secret = String(process.env.PAYSTACK_SECRET_KEY || '').trim();
+  const pub = String(process.env.PAYSTACK_PUBLIC_KEY || '').trim();
+  const secretMode = keyMode(secret);
+  const publicMode = keyMode(pub);
+  const [[hook]] = await pool.query("SELECT MAX(received_at) AS last, SUM(received_at >= UTC_TIMESTAMP() - INTERVAL 30 DAY) AS last30 FROM billing_events");
+  const [[lastEvent]] = await pool.query('SELECT event_type, status, received_at FROM billing_events ORDER BY received_at DESC, id DESC LIMIT 1');
+  const [[run]] = await pool.query('SELECT started_at, finished_at, status FROM billing_job_runs ORDER BY id DESC LIMIT 1');
+  return {
+    connected: Boolean(secret),
+    mode: secretMode,
+    secretKeySet: Boolean(secret),
+    publicKeySet: Boolean(pub),
+    publicKeyMode: publicMode,
+    modeMismatch: Boolean(secretMode && publicMode && secretMode !== publicMode),
+    webhookUrl: B.webhookUrl(),
+    callbackUrl: B.callbackUrl(),
+    lastWebhookAt: hook.last || null,
+    webhooksLast30Days: Number(hook.last30) || 0,
+    lastWebhook: lastEvent ? { type: lastEvent.event_type, status: lastEvent.status, receivedAt: lastEvent.received_at } : null,
+    dailyJob: { inApp: B.inAppDailyEnabled(), lastRun: run ? { startedAt: run.started_at, finishedAt: run.finished_at, status: run.status } : null },
+  };
+}
+
 module.exports = {
   BillingError, addMonths, addDays, periodEndFrom, ghs, dateText, day, addNotice, audit,
   planOut, listPlans, getPlan, ensureSubscription, getSubscription, effectivePlanCode, entitlementsFor, getEntitlements, usage,
@@ -934,4 +1130,5 @@ module.exports = {
   billingOverview, planStatus, startCheckout, activateCheckout, verifyCheckout, cancelRenewal, manageLink, insertPayment,
   handleWebhook, recordRenewal, sanitise, eventKey,
   updatePlan, listCoupons, updateCoupon, extendTrial, assignPlan, applyFoundingDiscount, revenueOverview, organisationBilling, subscriptionSummaries,
+  endTrialNow, markPaid, cancelSubscription, pauseSubscription, resumeSubscription, paymentsSettings, keyMode, MANUAL_METHODS,
 };

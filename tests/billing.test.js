@@ -478,3 +478,88 @@ test('tenant isolation: notices and payments of another organisation cannot be r
   assert.equal(ov.subscription.plan.code, 'growth');
   assert.equal(ov.subscription.amount, null);
 });
+
+test('owner controls: end trial now, record a manual payment with an invoice, pause/resume, cancel; all platform-audited', async () => {
+  const org = await makeOrg('Owner Controls Ltd', 'admin@ownercontrols.example');
+  const url = (a) => P(`/organizations/${org.id}/subscription/${a}`);
+  // End the trial now -> grace (the usual rule), then a manual payment
+  let r = await request(app).post(url('end-trial')).set(auth(ownerToken)).send({});
+  assert.deepEqual([r.status, r.body.status], [200, 'grace']);
+  assert.equal((await sub(org.id)).status, 'grace');
+  assert.equal((await request(app).post(url('end-trial')).set(auth(ownerToken)).send({})).status, 409);
+  assert.equal((await logs('BILLING_TRIAL_ENDED'))[0].scope, 'platform');
+  // Validation
+  assert.equal((await request(app).post(url('mark-paid')).set(auth(ownerToken)).send({ plan: 'starter', months: 1, amount: 99, method: 'cheque' })).status, 400);
+  assert.equal((await request(app).post(url('mark-paid')).set(auth(ownerToken)).send({ plan: 'free', months: 1, amount: 99, method: 'cash' })).status, 400);
+  r = await request(app).post(url('mark-paid')).set(auth(ownerToken)).send({ plan: 'starter', months: 3, amount: 297, method: 'momo', reference: 'MOMO-7781', note: 'Paid at the office' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(r.body.payment.invoice_number, /^EC-\d{4}-\d{6}$/);
+  let s = await sub(org.id);
+  assert.deepEqual([s.status, s.billing_mode, s.plan_code, s.manual_monthly_pesewas], ['active', 'manual', 'starter', 9900]);
+  assert.ok(Math.abs(new Date(s.manual_until) - Date.now() - 92 * DAY) < 3 * DAY);
+  // The admin sees the payment and can download the invoice
+  const pays = (await request(app).get('/api/billing/payments').set(auth(org.admin))).body;
+  assert.equal(pays.length, 1);
+  assert.match(pays[0].description, /mobile money, ref MOMO-7781/);
+  const pdf = await request(app).get(`/api/billing/payments/${pays[0].id}/invoice`).set(auth(org.admin));
+  assert.deepEqual([pdf.status, pdf.headers['content-type']], [200, 'application/pdf']);
+  // A second payment for the same plan continues from the end date
+  const until = new Date(s.manual_until);
+  await request(app).post(url('mark-paid')).set(auth(ownerToken)).send({ plan: 'starter', months: 1, amount: 99, method: 'cash' });
+  assert.ok(Math.abs(new Date((await sub(org.id)).manual_until) - until - 30 * DAY) < 2 * DAY);
+  assert.ok((await logs('BILLING_MANUAL_PAYMENT')).every((l) => l.scope === 'platform'));
+  // Pause: Free entitlements (payroll locked), data kept; resume restores the paid plan
+  r = await request(app).post(url('pause')).set(auth(ownerToken)).send({ note: 'Owner request' });
+  assert.deepEqual([r.status, (await sub(org.id)).status], [200, 'paused']);
+  const st = (await request(app).get('/api/billing/status').set(auth(org.admin))).body;
+  assert.deepEqual([st.plan, st.features.payroll], ['free', false]);
+  assert.equal((await request(app).post(url('pause')).set(auth(ownerToken))).status, 409);
+  r = await request(app).post(url('resume')).set(auth(ownerToken));
+  assert.deepEqual([r.status, r.body.status], [200, 'active']);
+  assert.equal((await logs('BILLING_SUBSCRIPTION_PAUSED')).length, 1);
+  assert.equal((await logs('BILLING_SUBSCRIPTION_RESUMED')).length, 1);
+  // Cancel at period end only applies to Paystack subscriptions; cancel now -> Free, data kept
+  assert.equal((await request(app).post(url('cancel')).set(auth(ownerToken)).send({ when: 'period_end' })).status, 409);
+  r = await request(app).post(url('cancel')).set(auth(ownerToken)).send({ when: 'now' });
+  assert.deepEqual([r.status, (await sub(org.id)).status], [200, 'free']);
+  assert.equal((await request(app).get('/api/billing/payments').set(auth(org.admin))).body.length, 2);
+  assert.equal((await logs('BILLING_SUBSCRIPTION_CANCELLED'))[0].scope, 'platform');
+  // The demo organisation refuses every control; admins cannot use them
+  const demoId = (await conn.query("SELECT id FROM organizations WHERE slug = 'demo'"))[0][0].id;
+  for (const a of ['end-trial', 'mark-paid', 'cancel', 'pause', 'resume']) {
+    assert.equal((await request(app).post(P(`/organizations/${demoId}/subscription/${a}`)).set(auth(ownerToken)).send({ plan: 'starter', months: 1, amount: 99, method: 'cash' })).status, 403, a);
+  }
+  assert.equal((await request(app).post(url('mark-paid')).set(auth(org.admin)).send({ plan: 'starter', months: 1, amount: 99, method: 'cash' })).status, 403);
+});
+
+test('payments settings: mode from the key prefix, never the key itself; webhook URL and last webhook time', async () => {
+  const saved = { s: process.env.PAYSTACK_SECRET_KEY, p: process.env.PAYSTACK_PUBLIC_KEY };
+  try {
+    delete process.env.PAYSTACK_SECRET_KEY; delete process.env.PAYSTACK_PUBLIC_KEY;
+    let r = await request(app).get(P('/billing/settings')).set(auth(ownerToken));
+    assert.deepEqual([r.status, r.body.connected, r.body.mode, r.body.publicKeySet], [200, false, null, false]);
+    assert.match(r.body.webhookUrl, /\/api\/billing\/paystack\/webhook$/);
+    process.env.PAYSTACK_SECRET_KEY = 'sk_test_onlyfortests0000'; process.env.PAYSTACK_PUBLIC_KEY = 'pk_live_onlyfortests0000';
+    r = await request(app).get(P('/billing/settings')).set(auth(ownerToken));
+    assert.deepEqual([r.body.connected, r.body.mode, r.body.publicKeyMode, r.body.modeMismatch], [true, 'test', 'live', true]);
+    assert.ok(!JSON.stringify(r.body).includes('onlyfortests'), 'keys are never returned');
+    assert.ok(r.body.lastWebhookAt, 'earlier tests delivered webhooks');
+    assert.equal((await request(app).get(P('/billing/settings')).set(auth(demoAdmin))).status, 403);
+  } finally {
+    if (saved.s === undefined) delete process.env.PAYSTACK_SECRET_KEY; else process.env.PAYSTACK_SECRET_KEY = saved.s;
+    if (saved.p === undefined) delete process.env.PAYSTACK_PUBLIC_KEY; else process.env.PAYSTACK_PUBLIC_KEY = saved.p;
+  }
+});
+
+test('in-app daily scheduler: due from 06:00 UTC until a run succeeds that day', async () => {
+  const { due } = require('../services/billingScheduler');
+  const today = new Date();
+  const at = (h) => new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), h, 30));
+  await conn.query('DELETE FROM billing_job_runs');
+  assert.equal(await due(at(5)), false);
+  assert.equal(await due(at(7)), true);
+  await runDaily({ log: () => {} });
+  assert.equal(await due(at(7)), false);
+  const second = await runDaily({ log: () => {} }); // a cron service as well: still safe
+  assert.equal(second.skipped, false);
+});

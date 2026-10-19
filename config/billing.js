@@ -39,7 +39,24 @@ function callbackUrl() {
   return (process.env.PAYSTACK_CALLBACK_URL || `${appUrl()}/admin/billing/callback`).trim();
 }
 
+const WEBHOOK_PATH = '/api/billing/paystack/webhook';
+const DEFAULT_API_URL = 'https://employee-management-system-backend-vxar.onrender.com';
+
+// The address to paste into Paystack (Settings -> API Keys & Webhooks). Render sets RENDER_EXTERNAL_URL itself.
+function webhookUrl() {
+  if (process.env.PAYSTACK_WEBHOOK_URL) return process.env.PAYSTACK_WEBHOOK_URL.trim();
+  const base = (process.env.PUBLIC_API_URL || process.env.RENDER_EXTERNAL_URL || DEFAULT_API_URL).trim().replace(/\/+$/, '');
+  return `${base}${WEBHOOK_PATH}`;
+}
+
+// The web service runs the daily billing job itself once a day unless BILLING_IN_APP_DAILY=false
+// (e.g. when a separate Render cron service runs `npm run billing:daily`; both together are still safe).
+function inAppDailyEnabled() {
+  return String(process.env.BILLING_IN_APP_DAILY || 'true').toLowerCase() !== 'false';
+}
+
 module.exports = {
+  WEBHOOK_PATH, webhookUrl, inAppDailyEnabled,
   TRIAL_PLAN, FREE_PLAN, TRIAL_DAYS, GRACE_DAYS, YEARLY_EXTRA_MULTIPLIER, CURRENCY, INTERVALS,
   TRIAL_REMINDER_DAYS, RENEWAL_REMINDER_DAYS, RENEWAL_LEEWAY_HOURS,
   paystackSecret, paymentsEnabled, appUrl, callbackUrl,
