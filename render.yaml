@@ -1,0 +1,24 @@
+# Render blueprint for the EmploCore API (documents the dashboard settings; no secret values here).
+services:
+  - type: web
+    name: employee-management-system-backend
+    runtime: node
+    branch: v1/aiven-production
+    buildCommand: npm install && npm run db:init   # schema + migrations; demo data only if SEED_DEMO=true
+    startCommand: node server.js
+    healthCheckPath: /api/live
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DB_URL
+        sync: false
+      - key: DB_SSL_CA_BASE64
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: ALLOWED_ORIGINS
+        value: https://emplocore.vercel.app,https://emplocore-*.vercel.app
+      - key: SEED_DEMO
+        value: "false"
