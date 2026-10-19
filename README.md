@@ -38,6 +38,13 @@ Node 18+, Express 5, mysql2 (connection pool with TLS, raw parameterised SQL), b
 | `POST /api/departments/:id/employees` | HR, Admin | `{ employee_ids: [..] }` moves employees into the department (anyone heading another department stops doing so) |
 | `DELETE /api/departments/:id/employees/:employeeId` | HR, Admin | Removes the employee from the department (and from its head role) |
 | `PUT /api/departments/:id/head` | HR, Admin | `{ employee_id }` (must be a member) or `{ employee_id: null }` |
+| `GET /api/payroll/tax-rules` | HR, Admin | The Ghana PAYE bands and SSNIT rates in use (`config/ghanaPayroll.js`) |
+| `POST /api/payroll/preview` | HR, Admin | `{ period?, basicSalary, allowances, deductions }` → the calculated payslip figures (nothing is saved) |
+| `GET /api/payroll/pay-details`, `GET/PUT /api/payroll/employees/:id/pay-details` | HR, Admin | Pay set-up per employee: `basicSalary` (GHS), `allowances`/`deductions` `[{ name, amount }]` (max 20 each), `bankName`, `bankAccount`, `ssnitNumber` (optional). Currency GHS. Saving also sets `employees.salary`. Audited (`SET_PAY_DETAILS`). The demo employee's pay details are demo-protected (403) |
+| `GET /api/payroll/runs`, `POST /api/payroll/runs` | HR, Admin | Months with totals; `{ period: 'YYYY-MM', payDate, employeeIds? }` creates **draft** payslips for all (or the selected) employees. Employees who already have a payslip that month are skipped; employees without a salary are left out and listed. Audited (`RUN_PAYROLL`) |
+| `GET /api/payroll/runs/:period`, `POST /api/payroll/runs/:period/publish` | HR, Admin | One month's payslips with totals; publish all drafts or `{ payslipIds }`. Audited (`PUBLISH_PAYSLIPS`) |
+| `GET /api/payroll/payslips/:id`, `GET /api/payroll/payslips/:id/pdf`, `DELETE /api/payroll/payslips/:id` | HR, Admin | View or download any payslip of the organisation; delete **drafts** only (409 for published). Audited (`DELETE_PAYSLIP`) |
+| `GET /api/payroll/my-payslips`, `GET /api/payroll/my-payslips/:id`, `GET /api/payroll/my-payslips/:id/pdf` | Signed in | The caller's own **published** payslips (through the employee record linked to the account). Drafts, colleagues' and other organisations' payslips are 404 |
 | `GET /api/audit-logs` (`?limit=&offset=`) | Admin | Max 1000 rows per request |
 | `GET /api/audit-logs/recent` | HR, Admin | |
 | `GET /api/live` | Public | Process is up (no DB). Use as the Render health check |
@@ -49,7 +56,7 @@ Node 18+, Express 5, mysql2 (connection pool with TLS, raw parameterised SQL), b
 
 ## Multi-tenant model and platform owner
 
-EmploCore is multi-tenant. Every user (except the platform owner), employee, department and audit entry belongs to an **organisation** (`organizations` table, migration `005_organizations.sql`). All queries are scoped to the caller's organisation as loaded from the database; records in another organisation return **404**. Existing data was backfilled into the **EmploCore Demo** organisation (slug `demo`).
+EmploCore is multi-tenant. Every user (except the platform owner), employee, department, payroll run, payslip and audit entry belongs to an **organisation** (`organizations` table, migration `005_organizations.sql`). All queries are scoped to the caller's organisation as loaded from the database; records in another organisation return **404**. Existing data was backfilled into the **EmploCore Demo** organisation (slug `demo`).
 
 - **Organisation status:** `pending` → `active` (approved) or `rejected`; `active` ⇄ `suspended`. Users of pending, suspended or rejected organisations cannot log in (403, code `ORGANISATION_PENDING` / `ORGANISATION_SUSPENDED` / `ORGANISATION_REJECTED`; a rejection carries the owner's optional `reason`), and their existing tokens are rejected (401).
 - **Public sign-up:** `POST /api/organizations/register` (`organizationName`, `organizationType`, `sizeRange`, `country`, `city` (optional), `phone`, `contactName`/`contactEmail` (optional, default to the admin), `adminName`, `email`, `password`) creates a *pending* organisation and its first admin. Type and size come from fixed lists in `config/signupOptions.js` (migration `006_org_signup_details_enquiries.sql`). It is rate-limited (`ORG_SIGNUP_RATE_LIMIT_MAX`, default 5 per `ORG_SIGNUP_RATE_LIMIT_WINDOW_MIN`, default 60). Anonymous employee self-sign-up is closed: `POST /api/users/register` needs an admin (any organisation role) or HR (employees only) and respects the organisation's `seat_limit`.
@@ -60,6 +67,20 @@ EmploCore is multi-tenant. Every user (except the platform owner), employee, dep
 - **Demo requests:** `POST /api/enquiries` (`name`, `organizationName`, `email`, `phone`, `message`; public, honeypot, rate-limited by `ENQUIRY_RATE_LIMIT_MAX`, default 5 per `ENQUIRY_RATE_LIMIT_WINDOW_MIN`, default 60) stores the contact page's "Request a demo" form for the owner console's *Enquiries* page.
 - **Approving organisations:** sign in at `/login` as the owner, go to *Owner console → Organisations*, use the *Pending approval* list at the top (or open the organisation) and choose **Approve** or **Reject** (with an optional reason). Spam registrations can then be deleted.
 - **Billing:** organisations carry `plan` and `status` fields. Paystack billing will hook in later by updating these (for example, suspending on failed payment). There is no payment code yet.
+
+## Payroll and payslips
+
+Migration `007_payroll.sql` adds `employee_pay_details`, `employee_pay_items`, `payroll_runs` and `payslips`. All money is stored in whole **pesewas** (integers; GHS 1.00 = 100), never floating point.
+
+- **Calculation** (`services/payrollCalc.js`): gross = basic + allowances; employee SSNIT = 5.5% of basic (capped at the maximum insurable earnings); taxable = gross − employee SSNIT; PAYE = graduated monthly bands on taxable; net = gross − SSNIT − PAYE − other deductions. Employer SSNIT (13%) is shown on payslips for information only. Percentages are rounded once, half up, to the pesewa.
+- **Rates** live in one file, `config/ghanaPayroll.js`, each entry with its source and effective-from date. A period uses the newest entry in force on the 1st of the month, so old months keep their rates. To change rates, **add** a new entry (do not edit old ones).
+  - PAYE from 1 September 2026: Income Tax (Amendment) Act, 2026 (Act 1178), GRA monthly resident rates. First GHS 588 at 0%, next 80 at 5%, next 100 at 10%, next 2,900 at 17.5%, next 16,000 at 25%, next 30,332 at 30%, above 50,000 at 35%.
+  - PAYE before September 2026 (from January 2025): the previous monthly table (Act 896 as amended by Act 1111). First 490 at 0%, next 110 at 5%, next 130 at 10%, next 3,166.67 at 17.5%, next 16,000 at 25%, next 30,520 at 30%, above 50,416.67 at 35%.
+  - SSNIT Tier 1: employee 5.5%, employer 13%. Maximum insurable earnings GHS 69,000 a month in 2026 (SSNIT notice, 13 January 2026) and GHS 61,000 in 2025.
+  - Payroll can be run from January 2025 up to one month ahead.
+- **Payslips are snapshots.** A payslip stores the employee's name, number, department, job title and bank, every amount, the allowance and deduction lines, the PAYE band breakdown and the rules used. Later changes to pay details or the employee record never change it. Status goes `draft` → `published`. Drafts can be deleted and re-run; published payslips are final. Employees only ever see published payslips.
+- **PDF:** generated on the server with `pdfkit` (Inter embedded from `@fontsource/inter`), built from the stored snapshot after the same access checks as the JSON view. The bank account is masked to its last four digits.
+- **Demo payroll:** `scripts/seed-payroll-demo.js` gives the demo employees pay details and published payslips for August 2026 (old bands) and September 2026 (Act 1178 bands). `db:init` runs it with `SEED_DEMO=true`, or on a demo deployment (`DEMO_MODE=true`) whose demo organisation exists and has no payroll yet. It is idempotent and only touches the `demo` organisation's `@emplocore.demo` employees. `SEED_DEMO_PAYROLL=false` turns off the demo-deployment case. In demo mode the demo employee's (Kwame Mensah's) pay details are protected, so the demo login's payslips stay as shown.
 
 ## Environment variables
 

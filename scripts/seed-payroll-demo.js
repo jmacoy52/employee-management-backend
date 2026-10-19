@@ -8,6 +8,7 @@
 //     yet, so an existing demo database gets payslips without re-running the full seed.
 // It never runs against a database without the demo organisation, only touches @emplocore.demo
 // employee records of that organisation, and is idempotent (existing pay details and months are kept).
+// SEED_DEMO_PAYROLL=false turns the demo-deployment case off.
 const crypto = require('crypto');
 const { calculatePayslip } = require('../services/payrollCalc');
 
@@ -43,7 +44,7 @@ function demoModeOn() {
 
 // Should init-db seed demo payroll? force = demo data is being seeded anyway.
 async function shouldSeedDemoPayroll(conn, { force = false } = {}) {
-  if (!force && !demoModeOn()) return false;
+  if (!force && (!demoModeOn() || String(process.env.SEED_DEMO_PAYROLL).toLowerCase() === 'false')) return false;
   const [[org]] = await conn.query("SELECT id FROM organizations WHERE slug = 'demo'");
   if (!org) return false;
   if (force) return true;
