@@ -46,7 +46,9 @@ Navigation: **Overview**, **Organisations**, **Enquiries**, **Organisation admin
    You do not see staff names; the organisation's admins manage their own people.
 
 6. *Subscription*: plan, status, trial or renewal date, amount, discount, last payment and payments.
-   **Extend trial** (1–90 days), **Assign plan** (any plan including Enterprise, with an optional
+   **Extend trial** (1–90 days), **End trial now**, **Record payment** (cash, mobile money or bank
+   transfer: plan, months, amount, reference, date and note; the admin gets a paid invoice), **Pause** /
+   **Resume**, **Cancel subscription** (now, or at the end of a paid period), **Assign plan** (any plan including Enterprise, with an optional
    employee limit, agreed monthly price, number of months and an internal note; any Paystack
    subscription is stopped first) and **Apply founding discount**. Every action is recorded in the
    platform audit log. The demo organisation is exempt.
@@ -55,6 +57,8 @@ Navigation: **Overview**, **Organisations**, **Enquiries**, **Organisation admin
 
 ### Revenue and plans
 
+- **Revenue → Payments settings**: whether Paystack is connected and in test or live mode, the webhook
+  address to copy, when the last webhook arrived, the last daily billing run, and how to switch to live.
 - **Revenue**: monthly recurring revenue, annual run rate, money collected in the last 30 days,
   organisations by status, MRR by plan and recent payments.
 - **Plans and prices**: **Edit** a plan to change its prices, included employees, extra-employee

@@ -97,6 +97,7 @@ it never matches owner accounts.
 - `billingDaily.js`: the daily job (`runDaily`), run by `scripts/billing-daily.js`
   (`npm run billing:daily`).
 - `invoicePdf.js`: the PDF invoice for a successful payment.
+- `billingScheduler.js`: runs the daily job inside the web service once a day (started by `server.js`).
 - Plan limits are enforced in `middleware/planGuards.js` (`requireFeature`,
   `requireEmployeeCapacity`, `requireEmployeesWithinLimit`) and, for accounts, in
   `OrganizationModel.lockSeat`. Billing routes: `routes/billingRoute.js`; owner routes in

@@ -173,7 +173,7 @@ invalidates older ones.
 The name of every applied migration file and when it ran. `scripts/migrate.js` uses it to apply each
 file exactly once.
 
-## Migrations 001–009
+## Migrations 001–010
 
 Migrations live in `db/migrations/` and run in filename order on every deploy (only the new ones).
 They are forward-only: there are no "down" scripts.
@@ -188,6 +188,7 @@ They are forward-only: there are no "down" scripts.
 | 006 | `006_org_signup_details_enquiries.sql` | Adds the `rejected` status and sign-up details (type, size, country, city, phone, contact, rejection reason, `reviewed_at`); creates `enquiries` |
 | 007 | `007_payroll.sql` | Creates `employee_pay_details`, `employee_pay_items`, `payroll_runs`, `payslips` (all money in pesewas; payslips are snapshots) |
 | 008 | `008_audit_scope_last_login.sql` | Adds `audit_logs.scope` (`tenant`/`platform`) and backfills it from the action name and whether an owner acted; adds `users.last_login_at`, backfilled from past `LOGIN` entries |
+| 010 | `010_billing_owner_controls.sql` | Adds the `paused` subscription status and `paused_at`, `paused_from` (owner pause and resume) |
 | 009 | `009_subscriptions.sql` | Creates the subscription and billing tables above; seeds the five plans and the `FOUNDING40` coupon; gives the demo organisation Growth (exempt), active and suspended organisations a 30-day Growth trial, and pending registrations a trial that starts on approval; `organizations.plan` defaults to `growth` |
 
 `tests/migrations.test.js` builds a populated v1 database, runs every migration, checks that no
@@ -195,7 +196,7 @@ data was lost and that a second run does nothing.
 
 ### Writing a new migration
 
-1. Add `db/migrations/010_short_name.sql`. Never edit a migration that has already run in production.
+1. Add `db/migrations/011_short_name.sql`. Never edit a migration that has already run in production.
 2. Prefer additive changes (new tables, nullable columns, new indexes), so the previous code version
    still works if you need to roll back.
 3. If you add a table, add it to the drop lists in `tests/helpers.js` and `scripts/init-db.js`.

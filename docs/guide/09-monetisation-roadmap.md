@@ -1,6 +1,7 @@
 # 9. Subscriptions and billing (LIVE)
 
-> **Status: LIVE in code, payments switched off until Paystack keys are added.** Plans, trials,
+> **Status: LIVE. Paystack TEST keys are set (19 October 2026), so checkouts use test cards and take no
+> real money; switch to live keys to charge customers.** Plans, trials,
 > limits, the Billing page, the owner's plan and subscription tools and the daily job are all live.
 > Until `PAYSTACK_SECRET_KEY` is set on Render, organisation admins see **"Payments coming soon,
 > contact us"** and nothing else changes. Switching payments on is a configuration step, described in
@@ -40,7 +41,7 @@ stateDiagram-v2
 
 - Renewals keep an organisation `active`. The owner can also assign any plan, which sets
   `billing_mode = manual`.
-- `status`: `trialing`, `active`, `grace`, `free`. `billing_mode`: `paystack`, `manual` (owner
+- `status`: `trialing`, `active`, `grace`, `free`, `paused` (owner paused: Free entitlements, data kept). `billing_mode`: `paystack`, `manual` (owner
   assigned, e.g. Enterprise or a comp) or `exempt` (the demo organisation, Growth for ever).
 - **No data is ever deleted.** On a lower plan, data over a limit is kept and readable:
   employee records over the cap can be viewed and deleted but not edited or added (`409
@@ -81,8 +82,9 @@ Only the organisation **admin** can see or change billing; HR and employees get 
 
 ## Daily job (`npm run billing:daily`)
 
-Runs at 06:00 UTC (06:00 Accra) as the Render cron service `emplocore-billing-daily`. Safe to run
-twice: it holds a MySQL named lock, every change is a conditional `UPDATE`, and notices have a unique
+Runs once a day from 06:00 UTC (06:00 Accra) **inside the web service** (`services/billingScheduler.js`
+checks every 30 minutes whether today's run has happened), so no Render cron service is needed. A separate
+cron service is optional (commented out in `render.yaml`). Safe to run twice: it holds a MySQL named lock, every change is a conditional `UPDATE`, and notices have a unique
 `dedupe_key`. Steps, in order:
 
 | Step | What it does |
@@ -109,8 +111,18 @@ log lines. Each run is recorded in `billing_job_runs`.
 - **Plans and prices**: edit prices, limits, features and the public feature list; switch the
   founding offer on or off.
 - **Organisation page → Subscription**: status, renewal date, last payment, payments, and actions:
-  extend trial, assign a plan (including Enterprise with an employee limit, agreed monthly price,
-  duration and note) and apply the founding discount. All actions are audit-logged with
+  extend trial; **end trial now** (to the 7-day grace period or straight to Free); **record payment**
+  for money received outside Paystack (cash, mobile money, bank; plan, months, amount, reference, date,
+  note; creates a paid invoice and gives the plan until the period ends, `billing_mode = manual`; a
+  second payment for the same plan continues from the end date); assign a plan (including Enterprise
+  with an employee limit, agreed monthly price, duration and note); apply the founding discount;
+  **pause** (Paystack renewals stop, Free entitlements, data kept; status `paused`) and **resume**
+  (back to the trial or paid period if it has not ended, otherwise a 7-day grace period); **cancel**
+  (now → Free, or at the end of a paid Paystack period).
+- **Revenue → Payments settings**: Paystack connected or not, **test or live** (from the key prefix
+  `sk_test_` / `sk_live_`; the keys stay in Render and are never stored or shown), public key set, a
+  warning if the two keys are from different modes, the webhook address with a Copy button, the return
+  page, the last webhook received and the last daily run, and plain-word steps to switch to live. All actions are audit-logged with
   `scope = platform`. The demo organisation is exempt and refuses these actions.
 
 ## Switching on live payments (Joseph)
@@ -122,7 +134,5 @@ See `docs/PAYSTACK_SETUP.md` for the click-by-click version.
    (and `APP_URL=https://emplocore.vercel.app` if the frontend address changes). Save and redeploy.
 3. In Paystack → Settings → API Keys & Webhooks, set the webhook URL to
    `https://employee-management-system-backend-vxar.onrender.com/api/billing/paystack/webhook`.
-4. Create the daily job: Render → Blueprints → sync `render.yaml` (it adds the cron service
-   `emplocore-billing-daily`), then give it `DB_URL`, `DB_SSL_CA_BASE64` and `PAYSTACK_SECRET_KEY`.
-   Render bills cron jobs by run time with a US$1 minimum a month per job.
+4. Nothing to do for the daily job: the web service runs it. (A Render cron service is optional.)
 5. Test with one real low-value payment, check the Billing page, the invoice and the owner Revenue page.
