@@ -49,6 +49,7 @@ Node 18+, Express 5, mysql2 (connection pool with TLS, raw parameterised SQL), b
 | `SEED_DEMO` | no | `true` loads the demo data in `npm run db:init`. Default off |
 | `AUTH_RATE_LIMIT_MAX`, `AUTH_RATE_LIMIT_WINDOW_MIN` | no | Login/register/reset attempts per IP (default 10 per 15 min) |
 | `RESET_LINK_TTL_MINUTES` | no | Reset link lifetime (default 60) |
+| `DEMO_PROTECTED_EMAILS` | no | Comma-separated logins that can't be deleted, deactivated, re-roled, have their password changed/reset or lose their employee link (403). Default: the three demo logins. Empty value turns protection off |
 | `ALLOWED_ORIGINS` | no | `https://emplocore.vercel.app,https://emplocore-*.vercel.app,http://localhost:3000` (default) |
 | `PORT` | no | Render sets this automatically |
 | `DB_SSL`, `DB_SSL_REJECT_UNAUTHORIZED`, `DB_CONNECTION_LIMIT`, `DB_PORT` | no | See `config/dbConfig.js` |
@@ -67,7 +68,7 @@ DB_URL='mysql://avnadmin:...@host:port/defaultdb?ssl-mode=REQUIRED' DB_SSL_CA_PA
 - `npm run db:schema` = schema + migrations, never demo data. `node scripts/init-db.js --reset --yes` drops and recreates everything.
 - New schema change: add `db/migrations/NNN_description.sql` (next number). Never edit an applied migration.
 
-Demo logins exist only if demo data was loaded (`SEED_DEMO=true` / `npm run db:seed`). **Change or delete them before real use.**
+Demo logins exist only if demo data was loaded (`SEED_DEMO=true` / `npm run db:seed`). They are protected by `DEMO_PROTECTED_EMAILS` (see above) so a public demo stays usable; **set `DEMO_PROTECTED_EMAILS=` (empty) and then change or delete them before real use.**
 
 | Role | Email | Password |
 |---|---|---|

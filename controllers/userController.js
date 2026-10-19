@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const AuditLogModel = require('../models/auditLogModel');
 const PasswordResetModel = require('../models/passwordResetModel');
 const { ROLES, PUBLIC_SIGNUP_ROLES, DEFAULT_ROLE, passwordProblem } = require('../config/roles');
+const { isProtectedEmail, isProtectedUserId, sendDemoProtected } = require('../config/demoAccounts');
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 const RESET_LINK_TTL_MINUTES = Number(process.env.RESET_LINK_TTL_MINUTES) || 60;
@@ -87,7 +88,7 @@ class UserController {
   }
 
         // UPDATE an existing user role
-  static updateUserRole(req, res) {
+  static async updateUserRole(req, res) {
     const userId = req.params.id;
     const role = (req.body.role || '').toString().trim().toLowerCase();
 
@@ -96,6 +97,11 @@ class UserController {
     }
     if (String(userId) === String(req.user.id)) {
       return res.status(400).json({ error: 'You cannot change your own role' });
+    }
+    try {
+      if (await isProtectedUserId(userId)) return sendDemoProtected(res);
+    } catch (err) {
+      return res.status(500).json({ error: 'Server error' });
     }
 
     UserModel.updateUserRole(userId, { role }, (err, result) => {
@@ -175,11 +181,16 @@ class UserController {
   }
 
   // Delete user (Admin only)
-  static deleteUser(req, res) {
+  static async deleteUser(req, res) {
     const userId = req.params.id;
 
     if (String(userId) === String(req.user.id)) {
       return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
+    try {
+      if (await isProtectedUserId(userId)) return sendDemoProtected(res);
+    } catch (err) {
+      return res.status(500).json({ error: 'Server error' });
     }
 
     UserModel.deleteUser(userId, (err, result) => {
@@ -302,6 +313,7 @@ class UserController {
     try {
       const user = await UserModel.findUserById(req.user.id);
       if (!user) return res.status(404).json({ error: 'User not found' });
+      if (isProtectedEmail(user.email)) return sendDemoProtected(res);
       const match = await bcrypt.compare(String(currentPassword), user.password);
       if (!match) return res.status(400).json({ error: 'Current password is incorrect' });
 
@@ -327,7 +339,7 @@ class UserController {
   }
 
   // Activate / deactivate an account (Admin only)
-  static setUserStatus(req, res) {
+  static async setUserStatus(req, res) {
     const userId = req.params.id;
     const { is_active } = req.body || {};
     if (typeof is_active !== 'boolean') {
@@ -335,6 +347,11 @@ class UserController {
     }
     if (String(userId) === String(req.user.id)) {
       return res.status(400).json({ error: 'You cannot deactivate your own account' });
+    }
+    try {
+      if (await isProtectedUserId(userId)) return sendDemoProtected(res);
+    } catch (err) {
+      return res.status(500).json({ error: 'Server error' });
     }
     UserModel.setActive(userId, is_active, (err, result) => {
       if (err) {
@@ -363,6 +380,7 @@ class UserController {
     try {
       const user = await UserModel.findUserById(userId);
       if (!user) return res.status(404).json({ error: 'User not found' });
+      if (isProtectedEmail(user.email)) return sendDemoProtected(res);
       const hashed = await bcrypt.hash(tempPassword, 10);
       UserModel.setPassword(user.id, hashed, true, (err) => {
         if (err) {
@@ -387,6 +405,7 @@ class UserController {
     try {
       const user = await UserModel.findUserById(userId);
       if (!user) return res.status(404).json({ error: 'User not found' });
+      if (isProtectedEmail(user.email)) return sendDemoProtected(res);
       if (!user.is_active) return res.status(400).json({ error: 'Activate the account before resetting its password' });
       PasswordResetModel.create(user.id, req.user.id, RESET_LINK_TTL_MINUTES, (err, data) => {
         if (err) {
@@ -412,6 +431,11 @@ class UserController {
     PasswordResetModel.findValid(token, async (err, row) => {
       if (err) return res.status(500).json({ error: 'Server error' });
       if (!row || !row.is_active) return res.status(400).json({ error: 'This reset link is invalid or has expired' });
+      try {
+        if (await isProtectedUserId(row.user_id)) return sendDemoProtected(res);
+      } catch (guardErr) {
+        return res.status(500).json({ error: 'Server error' });
+      }
       PasswordResetModel.markUsed(row.id, async (useErr, used) => {
         if (useErr) return res.status(500).json({ error: 'Server error' });
         if (used.affectedRows === 0) return res.status(400).json({ error: 'This reset link is invalid or has expired' });

@@ -2,6 +2,7 @@ const Employee = require('../models/employeeModel');
 const AuditLogModel = require('../models/auditLogModel');
 const UserModel = require('../models/userModel');
 const { pagination } = require('../config/pagination');
+const { isProtectedEmail, employeeProtection, sendDemoProtected } = require('../config/demoAccounts');
 
 class EmployeeController {
   // Get all employees
@@ -88,8 +89,15 @@ class EmployeeController {
   }
 
   // Delete employee
-  static deleteEmployee(req, res) {
+  static async deleteEmployee(req, res) {
     const employeeId = req.params.id;
+
+    // The demo employee's record backs a public demo login
+    try {
+      if ((await employeeProtection(employeeId)).protected) return sendDemoProtected(res);
+    } catch (err) {
+      return res.status(500).json({ error: 'Server error' });
+    }
 
     Employee.deleteEmployee(employeeId, (err, result) => {
       if (err) {
@@ -123,8 +131,15 @@ class EmployeeController {
     if (userId !== null && !Number.isInteger(userId)) return res.status(400).json({ error: 'user_id must be a number or null' });
 
     try {
-      if (userId !== null && !(await UserModel.findUserById(userId))) {
+      const user = userId !== null ? await UserModel.findUserById(userId) : null;
+      if (userId !== null && !user) {
         return res.status(404).json({ error: 'User not found' });
+      }
+      // Demo accounts: the only allowed change is (re)linking a demo record to its own demo account
+      const record = await employeeProtection(employeeId);
+      if (record.protected || (user && isProtectedEmail(user.email))) {
+        const restoresOwnLink = user && record.email && user.email.toLowerCase() === String(record.email).toLowerCase();
+        if (!restoresOwnLink) return sendDemoProtected(res);
       }
     } catch (err) {
       return res.status(500).json({ error: 'Server error' });
