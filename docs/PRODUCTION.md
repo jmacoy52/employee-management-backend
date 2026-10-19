@@ -50,6 +50,9 @@ at least 8 characters, with a letter and a number. The script refuses to touch a
 Then sign in, open **User Management** and create HR accounts. Employees can sign up themselves (as
 `employee`), or HR can create their records and link the accounts.
 
+### 4b. Create the platform owner and approve organisations
+Create the owner once, either with `POST /api/platform/bootstrap-owner` (setup token checked against `OWNER_SETUP_TOKEN_HASH` or the hash committed in `config/ownerBootstrap.js`; returns 410 once an owner exists) or with `npm run create-owner`. `npm run create-admin` now needs `--org "Organisation name"` (creates an active organisation) or `--org-slug <slug>`. New organisations that register publicly are **pending** until the owner approves them in the owner console (`/owner`). Billing (Paystack) will later drive each organisation's `plan` and `status` fields; there is no payment code yet.
+
 ## 5. Configure the frontend (Vercel → Settings → Environment Variables)
 
 | Variable | Value |

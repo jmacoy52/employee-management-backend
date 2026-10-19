@@ -47,6 +47,19 @@ Node 18+, Express 5, mysql2 (connection pool with TLS, raw parameterised SQL), b
 - Every request re-reads the account's role, `is_active` and `token_version` from the database, so role changes, deactivation, deletion, logout and password changes take effect immediately.
 - **Password reset without email:** there is no email service. An admin either (a) issues a temporary password, which the user must change at next sign-in, or (b) generates a one-time reset link and shares it with the user directly. Only a SHA-256 hash of the link token is stored; it expires and works once. Nothing is emailed.
 
+## Multi-tenant model and platform owner
+
+EmploCore is multi-tenant. Every user (except the platform owner), employee, department and audit entry belongs to an **organisation** (`organizations` table, migration `005_organizations.sql`). All queries are scoped to the caller's organisation as loaded from the database; records in another organisation return **404**. Existing data was backfilled into the **EmploCore Demo** organisation (slug `demo`).
+
+- **Organisation status:** `pending` → `active` → `suspended` (and back). Users of pending or suspended organisations cannot log in (403, code `ORGANISATION_PENDING` / `ORGANISATION_SUSPENDED`), and their existing tokens are rejected (401).
+- **Public sign-up:** `POST /api/organizations/register` (`organizationName`, `adminName`, `email`, `password`) creates a *pending* organisation and its first admin. It is rate-limited (`ORG_SIGNUP_RATE_LIMIT_MAX`, default 5 per `ORG_SIGNUP_RATE_LIMIT_WINDOW_MIN`, default 60). Anonymous employee self-sign-up is closed: `POST /api/users/register` needs an admin (any organisation role) or HR (employees only) and respects the organisation's `seat_limit`.
+- **E-mail addresses are globally unique** (login is by e-mail), so signing up with an address already used in another organisation returns 409.
+- **Roles:** `employee`, `hr`, `admin` within an organisation, plus `owner` (platform level, no organisation). `owner` can never be created through a public route.
+- **Owner console API:** `/api/platform/*` (owner only): `overview`, `organizations` (list/search/filter, create with first admin, `GET/PATCH /:id`, `POST /:id/approve|suspend|reactivate`, `DELETE /:id` only when empty, otherwise 409), `users` (search/filter, `PATCH /:id/status`, `POST /:id/temporary-password`, `POST /:id/reset-link`) and `audit-logs`. Every owner action is audited. There is no impersonation. In demo mode the demo organisation cannot be suspended and the demo logins stay protected.
+- **Bootstrapping the owner:** `POST /api/platform/bootstrap-owner` with `{ setupToken, email, name, password }` works once. The token is checked against the bcrypt hash in `OWNER_SETUP_TOKEN_HASH` (env), or the hash committed in `config/ownerBootstrap.js`. When an owner exists, the endpoint returns **410**. To rotate the token, set `OWNER_SETUP_TOKEN_HASH` to a new bcrypt hash. Alternatively, run `npm run create-owner -- --email you@example.com --name "Your Name"` against the database (password prompted or read from `OWNER_PASSWORD`; use `--additional` to add a second owner). Owner passwords need 12+ characters, including a letter and a number.
+- **Approving organisations:** sign in at `/login` as the owner, go to *Owner console → Organisations*, open the pending organisation and choose **Approve**.
+- **Billing:** organisations carry `plan` and `status` fields. Paystack billing will hook in later by updating these (for example, suspending on failed payment). There is no payment code yet.
+
 ## Environment variables
 
 | Name | Required | Format / example |
