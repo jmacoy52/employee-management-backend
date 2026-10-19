@@ -48,8 +48,9 @@ DB_URL='mysql://...' DB_SSL_CA_PATH=./db-ca.pem \
 The script asks for the password twice and hides what you type. For automation, set `ADMIN_PASSWORD`
 in the environment instead; never put it on the command line. The password is never printed. Rules:
 at least 8 characters, with a letter and a number. The script refuses to touch an existing account.
-Then sign in, open **User Management** and create HR accounts. Employees can sign up themselves (as
-`employee`), or HR can create their records and link the accounts.
+Then sign in, open **User Management** and create HR accounts. Public self-sign-up is closed:
+admins create accounts in **User Management** (the API also lets HR create `employee` accounts), and HR
+creates employee records and links them to those accounts.
 
 ### 4b. Create the platform owner and approve organisations
 Create the owner once, either with `POST /api/platform/bootstrap-owner` (setup token checked against `OWNER_SETUP_TOKEN_HASH` or the hash committed in `config/ownerBootstrap.js`; returns 410 once an owner exists) or with `npm run create-owner`. `npm run create-admin` now needs `--org "Organisation name"` (creates an active organisation) or `--org-slug <slug>`. New organisations that register publicly are **pending** until the owner approves (or rejects) them in the owner console (`/owner`); the owner manages their own name, e-mail and password under *My account*, and demo requests from the contact page appear under *Enquiries*. Billing (Paystack) will later drive each organisation's `plan` and `status` fields; there is no payment code yet.
