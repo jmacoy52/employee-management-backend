@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const db = require('./config/db');
 const { corsOptions } = require('./config/cors');
 const employeeRoutes = require('./routes/employeeRoute');
@@ -16,10 +17,17 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.set('trust proxy', 1); // behind Render's proxy
+app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '100kb' }));
 
-// Health check (use as Render's health check path)
+// Liveness check: the process is up (no database call). Use as Render's health check path
+// so a database outage does not make Render restart or fail the deploy.
+app.get('/api/live', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+// Health check (database included; use for monitoring)
 app.get('/api/health', (req, res) => {
   db.query('SELECT 1', (err) => {
     if (err) {
@@ -54,6 +62,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Server error' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on ${PORT}`);
-});
+// Start listening only when run directly (tests import the app without a port)
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server is running on ${PORT}`);
+  });
+}
+
+module.exports = app;

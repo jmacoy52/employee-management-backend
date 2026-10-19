@@ -2,9 +2,9 @@ const db = require('../config/db');
 
 class AuditLogModel {
   // Get all logs (newest first)
-  static getAllLogs(callback) {
-    const query = 'SELECT * FROM audit_logs ORDER BY created_at DESC';
-    db.query(query, (err, results) => {
+  static getAllLogs(callback, { limit = 500, offset = 0 } = {}) {
+    const query = 'SELECT * FROM audit_logs ORDER BY created_at DESC, LogId DESC LIMIT ? OFFSET ?';
+    db.query(query, [limit, offset], (err, results) => {
       if (err) return callback(err);
       callback(null, results);
     });

@@ -12,6 +12,10 @@ router.get('/', authenticateToken, authorizeAdmin, AuditLogController.getAllAudi
 router.get('/recent', authenticateToken, authorizeHR, AuditLogController.getRecentActivities);
 
 // Route to insert audit log (Admin only, for testing)
-router.post('/', authenticateToken, authorizeAdmin, AuditLogController.insertAuditLog);
+// Disabled in production: it let an admin write entries under any user id, which
+// undermines the audit trail. Set ENABLE_AUDIT_LOG_TEST_ROUTE=true locally to use it.
+if (process.env.ENABLE_AUDIT_LOG_TEST_ROUTE === 'true') {
+  router.post('/', authenticateToken, authorizeAdmin, AuditLogController.insertAuditLog);
+}
 
 module.exports = router;

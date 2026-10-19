@@ -1,4 +1,5 @@
 const AuditLogModel = require('../models/auditLogModel');
+const { pagination } = require('../config/pagination');
 
 class AuditLogController {
   //  Get all audit logs (admin only)
@@ -9,7 +10,7 @@ class AuditLogController {
         return res.status(500).json({ error: 'Failed to fetch audit logs' });
       }
       res.status(200).json(logs);
-    });
+    }, pagination(req.query));
   }
 
   // Get recent activities for HR (last 10 activities)

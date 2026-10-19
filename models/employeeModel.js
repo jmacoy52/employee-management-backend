@@ -2,9 +2,15 @@ const db = require('../config/db');
 
 class EmployeeModel {
   // Get all employees
-  static getAllEmployees(callback) {
-    const query = 'SELECT * FROM employees ORDER BY id DESC';
-    db.query(query, (err, results) => {
+  // limit/offset keep the response bounded as the table grows
+  static getAllEmployees(callback, { limit = 500, offset = 0 } = {}) {
+    const query = `
+      SELECT e.*, u.username AS linked_username, u.email AS linked_email
+      FROM employees e LEFT JOIN users u ON u.id = e.user_id
+      ORDER BY e.id DESC
+      LIMIT ? OFFSET ?
+    `;
+    db.query(query, [limit, offset], (err, results) => {
       if (err) return callback(err);
       callback(null, results);
     });
@@ -57,6 +63,11 @@ class EmployeeModel {
       if (results.length === 0) return callback(null, null);
       callback(null, results[0]);
     });
+  }
+
+  // Link (userId) or unlink (null) a user account
+  static setUser(id, userId, callback) {
+    db.query('UPDATE employees SET user_id = ? WHERE id = ?', [userId, id], callback);
   }
 
   // Check if email already exists (for validation)

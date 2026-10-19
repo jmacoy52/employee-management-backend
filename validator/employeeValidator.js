@@ -15,6 +15,8 @@ const employeeValidationSchema = {
   },
 
   email: {
+    // Email is optional (the column allows NULL); when given it must be valid and unique
+    optional: { options: { values: 'falsy' } },
     isEmail: {
       errorMessage: 'Invalid email format',
     },
@@ -39,12 +41,26 @@ const employeeValidationSchema = {
     }
   },
 
+  Department: {
+    notEmpty: {
+      errorMessage: 'Department is required',
+    },
+    isLength: {
+      options: { min: 2, max: 100 },
+      errorMessage: 'Department must be between 2 and 100 characters',
+    }
+  },
+
   salary: {
     isFloat: {
-      options: { min: 0 },
+      options: { min: 0, max: 9999999999 },
       errorMessage: 'Salary must be a positive number',
     }
   }
 };
 
+// Updates use the same rules except email (not editable on update, so no uniqueness check)
+const { email, ...employeeUpdateSchema } = employeeValidationSchema;
+
 module.exports = checkSchema(employeeValidationSchema);
+module.exports.update = checkSchema(employeeUpdateSchema);

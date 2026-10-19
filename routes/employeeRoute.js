@@ -24,7 +24,10 @@ router.get('/employees/:id', authenticateToken, authorizeHR, EmployeeController.
 router.post('/employees', authenticateToken, authorizeHR, employeeValidation, handleValidation, EmployeeController.createEmployee);
 
 // Route to update an employee (HR/Admin)
-router.put('/employees/:id', authenticateToken, authorizeHR, EmployeeController.updateEmployee);
+router.put('/employees/:id', authenticateToken, authorizeHR, employeeValidation.update, handleValidation, EmployeeController.updateEmployee);
+
+// Route to link/unlink a user account to an employee record (HR/Admin). Body: { user_id: number | null }
+router.put('/employees/:id/link', authenticateToken, authorizeHR, EmployeeController.linkUser);
 
 // Route to delete an employee (HR/Admin)
 router.delete('/employees/:id', authenticateToken, authorizeHR, EmployeeController.deleteEmployee);

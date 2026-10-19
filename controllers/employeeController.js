@@ -1,5 +1,7 @@
 const Employee = require('../models/employeeModel');
 const AuditLogModel = require('../models/auditLogModel');
+const UserModel = require('../models/userModel');
+const { pagination } = require('../config/pagination');
 
 class EmployeeController {
   // Get all employees
@@ -20,7 +22,7 @@ class EmployeeController {
       });
 
       res.status(200).json(data);
-    });
+    }, pagination(req.query));
   }
 
   // Create a new employee
@@ -109,6 +111,42 @@ class EmployeeController {
       });
 
       res.status(200).json({ message: 'Employee deleted successfully' });
+    });
+  }
+
+  // Link a user account to this employee record, or unlink with user_id = null
+  static async linkUser(req, res) {
+    const employeeId = req.params.id;
+    const raw = req.body ? req.body.user_id : undefined;
+    if (raw === undefined) return res.status(400).json({ error: 'user_id is required (a user id, or null to unlink)' });
+    const userId = raw === null || raw === '' ? null : Number(raw);
+    if (userId !== null && !Number.isInteger(userId)) return res.status(400).json({ error: 'user_id must be a number or null' });
+
+    try {
+      if (userId !== null && !(await UserModel.findUserById(userId))) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+    } catch (err) {
+      return res.status(500).json({ error: 'Server error' });
+    }
+
+    Employee.setUser(employeeId, userId, (err, result) => {
+      if (err) {
+        if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'That account is already linked to another employee' });
+        console.error('Error linking employee:', err);
+        return res.status(500).json({ error: 'Failed to link account' });
+      }
+      if (result.affectedRows === 0) return res.status(404).json({ error: 'Employee not found' });
+      AuditLogModel.insertLog({
+        userId: req.user.id,
+        actions: userId ? 'LINK_EMPLOYEE_USER' : 'UNLINK_EMPLOYEE_USER',
+        descriptions: userId
+          ? `Employee ${employeeId} linked to user ${userId} by ${req.user.email}`
+          : `Employee ${employeeId} unlinked by ${req.user.email}`
+      }, (logErr) => {
+        if (logErr) console.error('Failed to insert audit log:', logErr);
+      });
+      res.json({ message: userId ? 'Account linked' : 'Account unlinked' });
     });
   }
 
