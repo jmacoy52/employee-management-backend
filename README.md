@@ -1,159 +1,71 @@
-# Employee Management System
+# EmploCore — Backend API (v1)
 
-A full-stack web application for managing employees, built with Node.js, Express, React, and MySQL.
+This is the Express and MySQL REST API behind the EmploCore frontend
+([employee-management-system-frontend](https://github.com/jmacoy52/employee-management-system-frontend), live at https://emplocore.vercel.app).
 
-## Features
+> **Branch note:** this branch (`v1/aiven-production`) continues the v1 API that the frontend calls (`/api/users/*`, `/api/employees`, `/api/audit-logs`). The v2 rewrite on `main` (multi-tenant, `/api/admin/*`, paginated responses) is **not** compatible with the current frontend.
 
-- User authentication and registration
-- Role-based access control (Admin, HR, Employee)
-- Employee management (CRUD operations)
-- User management (for admins)
-- Audit logging
-- Responsive user interface
+## Stack
+Node 18+, Express 5, mysql2 (connection pool with TLS), bcryptjs, jsonwebtoken, express-validator.
 
-## Technology Stack
+## API
 
-- **Backend:** Node.js, Express.js, JWT, bcryptjs, MySQL
-- **Frontend:** React, React Router, Axios, React Hot Toast
-- **Other:** CORS, dotenv
+| Method & path | Access | Notes |
+|---|---|---|
+| `POST /api/users/register` | Public, or an admin token | Public sign-up can choose `employee` (the default) or `hr`. Only an admin token can create an `admin`. Passwords need at least 8 characters |
+| `POST /api/users/login` | Public | Returns `{ token, user }`. The JWT expires after `JWT_EXPIRES_IN` |
+| `GET/PUT /api/users/profile` | Any signed-in user | Profile fields: first_name, last_name, phone, address |
+| `GET /api/users/all` | Admin | |
+| `PUT /api/users/:id/role` | Admin | Role must be employee, hr or admin. Admins can't change their own role |
+| `DELETE /api/users/:id` | Admin | Admins can't delete their own account |
+| `GET /api/employees`, `GET /api/employees/:id` | HR, Admin | |
+| `POST /api/employees`, `PUT/DELETE /api/employees/:id` | HR, Admin | |
+| `GET /api/audit-logs` | Admin | |
+| `GET /api/audit-logs/recent` | HR, Admin | |
+| `GET /api/health` | Public | Returns `200 {status:"ok"}` or `503` when the database is unreachable |
 
-## Installation
+## Environment variables
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd Employee-Management-System
-   ```
+| Name | Required | Format / example |
+|---|---|---|
+| `DB_URL` | yes | `mysql://USER:PASSWORD@HOST:PORT/DATABASE?ssl-mode=REQUIRED` (for Aiven, use the Service URI) |
+| `DB_SSL_CA_PATH`, `DB_SSL_CA_BASE64` or `DB_SSL_CA` | yes for Aiven | The CA certificate as a file path, base64 of the PEM, or PEM text |
+| `JWT_SECRET` | yes | A long random string |
+| `JWT_EXPIRES_IN` | no | `8h` (default) |
+| `ALLOWED_ORIGINS` | no | `https://emplocore.vercel.app,https://emplocore-*.vercel.app,http://localhost:3000` (default) |
+| `PORT` | no | Render sets this automatically |
+| `DB_SSL`, `DB_SSL_REJECT_UNAUTHORIZED`, `DB_CONNECTION_LIMIT`, `DB_PORT` | no | See `config/dbConfig.js` |
 
-2. Install backend dependencies:
-   ```bash
-   npm install
-   ```
+Copy `.env.example` to `.env` for local development.
 
-3. Install frontend dependencies:
-   ```bash
-   cd client
-   npm install
-   cd ..
-   ```
+## Database setup
 
-4. Configure environment variables:
-   - Create a `.env` file in the `backend` directory with your database credentials, JWT secret, and other necessary environment variables.
+```bash
+npm install
+DB_URL='mysql://avnadmin:...@host:port/defaultdb?ssl-mode=REQUIRED' DB_SSL_CA_PATH=./ca.pem npm run db:init
+```
 
-5. Set up the database:
-   - Run the SQL scripts located in `backend/sql/` to create the necessary tables.
+- `db/schema.sql` creates the tables `users`, `user_profiles`, `employees` and `audit_logs`. It is idempotent.
+- `db/seed.sql` loads demo data. It is also idempotent: rows are matched on email.
+- `npm run db:schema` creates the tables only. `node scripts/init-db.js --reset --yes` drops and recreates everything.
 
-## Running the Application
+Demo logins come from `db/seed.sql`. **Change or delete them before real use.**
 
-1. Start the backend server:
-   ```bash
-   npm start
-   ```
+| Role | Email | Password |
+|---|---|---|
+| admin | admin@emplocore.demo | Admin@EmploCore2026 |
+| hr | hr@emplocore.demo | Hr@EmploCore2026 |
+| employee | kwame.mensah@emplocore.demo | Staff@EmploCore2026 |
 
-2. Start the frontend development server:
-   ```bash
-   cd client
-   npm start
-   ```
+## Run
 
-3. Open your browser and navigate to the application.
+```bash
+npm start        # node server.js
+npm run dev      # nodemon
+```
 
-## Project Structure
+## Deploy (Render)
 
-- `backend/` - Node.js and Express backend code, including routes, controllers, models, and middleware.
-- `client/` - React frontend application.
-- `client/public/assets/homepageEmplocore.png` - Homepage image displayed on the landing page.
-
-## Screenshot
-
-### Homepage
-The API will be running on your configured port.
-
----
-
-## 📌 Notes
-
-- This is a full-stack project with both backend and frontend components.
-- The frontend is built with React and is located in the `client` directory.
-- Ensure CORS is configured for frontend-backend communication.
-=======
-# Employee Management System
-
-A full-stack web application for managing employees, built with Node.js, Express, React, and MySQL.
-
-## Features
-
-- User authentication and registration
-- Role-based access control (Admin, HR, Employee)
-- Employee management (CRUD operations)
-- User management (for admins)
-- Audit logging
-- Responsive user interface
-
-## Technology Stack
-
-- **Backend:** Node.js, Express.js, JWT, bcryptjs, MySQL
-- **Frontend:** React, React Router, Axios, React Hot Toast
-- **Other:** CORS, dotenv
-
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd Employee-Management-System
-   ```
-
-2. Install backend dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Install frontend dependencies:
-   ```bash
-   cd client
-   npm install
-   cd ..
-   ```
-
-4. Configure environment variables:
-   - Create a `.env` file in the `backend` directory with your database credentials, JWT secret, and other necessary environment variables.
-
-5. Set up the database:
-   - Run the SQL scripts located in `backend/sql/` to create the necessary tables.
-
-## Running the Application
-
-1. Start the backend server:
-   ```bash
-   npm start
-   ```
-
-2. Start the frontend development server:
-   ```bash
-   cd client
-   npm start
-   ```
-
-3. Open your browser and navigate to the application.
-
-## Project Structure
-
-- `backend/` - Node.js and Express backend code, including routes, controllers, models, and middleware.
-- `client/` - React frontend application.
-- `client/public/assets/homepageEmplocore.png` - Homepage image displayed on the landing page.
-
-## Screenshot
-
-### Homepage
-
-![Homepage](client/public/assets/homepageEmplocore.png)
-
-## Contributing
-
-Contributions are welcome! Please open issues or submit pull requests for improvements.
-
-## License
-
-This project is licensed under the ISC License.
->>>>>>> frontend
+- **Build command:** `npm install`. **Start command:** `node server.js`. **Health check path:** `/api/health`.
+- Set the environment variables above. Put the Aiven CA in a Render **Secret File**, for example `aiven-ca.pem`, and point `DB_SSL_CA_PATH` at `/etc/secrets/aiven-ca.pem`.
+- If the database is unreachable, the server keeps running. It retries the connection and reports the state at `/api/health`.
