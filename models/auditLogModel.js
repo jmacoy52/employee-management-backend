@@ -13,9 +13,9 @@ class AuditLogModel {
   // Get recent activities (last 10, newest first)
   static getRecentActivities(callback) {
     const query = `
-      SELECT al.id, al.actions, al.descriptions, al.created_at, u.username
+      SELECT al.LogId, al.actions, al.descriptions, al.created_at, u.username
       FROM audit_logs al
-      JOIN users u ON al.userId = u.id
+      LEFT JOIN users u ON al.UserId = u.id
       ORDER BY al.created_at DESC
       LIMIT 10
     `;
