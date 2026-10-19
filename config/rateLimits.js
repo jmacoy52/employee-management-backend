@@ -22,4 +22,15 @@ const orgSignupLimiter = rateLimit({
   message: { error: 'Too many registrations from this network. Please try again later.' },
 });
 
-module.exports = { authLimiter, orgSignupLimiter };
+// Public "Request a demo" / contact form (per IP).
+//   ENQUIRY_RATE_LIMIT_MAX        submissions per window (default 5)
+//   ENQUIRY_RATE_LIMIT_WINDOW_MIN window length in minutes (default 60)
+const enquiryLimiter = rateLimit({
+  windowMs: (Number(process.env.ENQUIRY_RATE_LIMIT_WINDOW_MIN) || 60) * 60 * 1000,
+  limit: Number(process.env.ENQUIRY_RATE_LIMIT_MAX) || 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many messages from this network. Please try again later, or e-mail us instead.' },
+});
+
+module.exports = { authLimiter, orgSignupLimiter, enquiryLimiter };

@@ -4,7 +4,7 @@ const { slugify, uniqueSlug } = require('../config/slug');
 // Organisations (tenants), migration 005. Promise-based raw SQL through the shared mysql2 pool.
 const pool = db.promise();
 
-const STATUSES = ['pending', 'active', 'suspended'];
+const STATUSES = ['pending', 'active', 'suspended', 'rejected'];
 
 class SeatLimitError extends Error {
   constructor(limit) {
@@ -27,12 +27,16 @@ class OrganizationModel {
   }
 
   // Inserts an organisation. Use inside a transaction together with its first admin.
-  static async insert(conn, { name, status = 'pending', plan = 'standard', seatLimit = null, contactEmail = null }) {
+  // details (optional, from the public sign-up form): { orgType, sizeRange, country, city, phone, contactName }
+  static async insert(conn, { name, status = 'pending', plan = 'standard', seatLimit = null, contactEmail = null, details = {} }) {
     const slug = await uniqueSlug(conn, name);
+    const d = details || {};
     const [result] = await conn.query(
-      `INSERT INTO organizations (name, slug, status, plan, seat_limit, contact_email, approved_at)
-       VALUES (?, ?, ?, ?, ?, ?, ${status === 'active' ? 'CURRENT_TIMESTAMP' : 'NULL'})`,
-      [name, slug, status, plan, seatLimit, contactEmail]
+      `INSERT INTO organizations (name, slug, status, plan, seat_limit, contact_email,
+         org_type, size_range, country, city, phone, contact_name, approved_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${status === 'active' ? 'CURRENT_TIMESTAMP' : 'NULL'})`,
+      [name, slug, status, plan, seatLimit, contactEmail,
+        d.orgType || null, d.sizeRange || null, d.country || null, d.city || null, d.phone || null, d.contactName || null]
     );
     return { id: result.insertId, slug };
   }
@@ -98,6 +102,8 @@ class OrganizationModel {
         (SELECT COUNT(*) FROM organizations WHERE status = 'pending') AS pending,
         (SELECT COUNT(*) FROM organizations WHERE status = 'active') AS active,
         (SELECT COUNT(*) FROM organizations WHERE status = 'suspended') AS suspended,
+        (SELECT COUNT(*) FROM organizations WHERE status = 'rejected') AS rejected,
+        (SELECT COUNT(*) FROM enquiries WHERE status = 'new') AS enquiries_new,
         (SELECT COUNT(*) FROM users WHERE organization_id IS NOT NULL) AS users,
         (SELECT COUNT(*) FROM users WHERE organization_id IS NOT NULL AND is_active = 1) AS active_users,
         (SELECT COUNT(*) FROM employees) AS employees,
@@ -111,14 +117,14 @@ class OrganizationModel {
     const params = [];
     if (status) { where.push('o.status = ?'); params.push(status); }
     if (q) {
-      where.push('(o.name LIKE ? OR o.slug LIKE ? OR o.contact_email LIKE ?)');
+      where.push('(o.name LIKE ? OR o.slug LIKE ? OR o.contact_email LIKE ? OR o.contact_name LIKE ? OR o.city LIKE ? OR o.country LIKE ?)');
       const like = `%${q.replace(/[\\%_]/g, '\\$&')}%`;
-      params.push(like, like, like);
+      params.push(like, like, like, like, like, like);
     }
     const [rows] = await pool.query(
       `SELECT o.*, ${COUNTS_SQL} FROM organizations o
        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-       ORDER BY FIELD(o.status, 'pending', 'active', 'suspended'), o.created_at DESC, o.id DESC
+       ORDER BY FIELD(o.status, 'pending', 'active', 'suspended', 'rejected'), o.created_at DESC, o.id DESC
        LIMIT ? OFFSET ?`,
       [...params, limit, offset]
     );
@@ -136,23 +142,52 @@ class OrganizationModel {
     return rows;
   }
 
-  static async update(id, { name, plan, seatLimit, contactEmail }) {
+  static async update(id, { name, plan, seatLimit, contactEmail, details = {} }) {
+    const d = details || {};
     const [result] = await pool.query(
-      'UPDATE organizations SET name = ?, plan = ?, seat_limit = ?, contact_email = ? WHERE id = ?',
-      [name, plan, seatLimit, contactEmail, id]
+      `UPDATE organizations SET name = ?, plan = ?, seat_limit = ?, contact_email = ?,
+         org_type = ?, size_range = ?, country = ?, city = ?, phone = ?, contact_name = ?
+       WHERE id = ?`,
+      [name, plan, seatLimit, contactEmail, d.orgType || null, d.sizeRange || null, d.country || null, d.city || null, d.phone || null, d.contactName || null, id]
     );
     return result.affectedRows;
   }
 
-  // Sets the status; the first activation records approved_at.
-  static async setStatus(id, status) {
+  // Sets the status; the first activation records approved_at. Approving or rejecting records
+  // reviewed_at; rejecting stores the optional reason, any other change clears it.
+  static async setStatus(id, status, { reason = null, review = false } = {}) {
     const [result] = await pool.query(
       `UPDATE organizations SET status = ?,
-         approved_at = IF(? = 'active' AND approved_at IS NULL, CURRENT_TIMESTAMP, approved_at)
+         approved_at = IF(? = 'active' AND approved_at IS NULL, CURRENT_TIMESTAMP, approved_at),
+         reviewed_at = IF(?, CURRENT_TIMESTAMP, reviewed_at),
+         rejection_reason = ?
        WHERE id = ?`,
-      [status, status, id]
+      [status, status, review ? 1 : 0, status === 'rejected' ? reason : null, id]
     );
     return result.affectedRows;
+  }
+
+  // A registration that was never approved (pending or rejected) and has no employee records can
+  // be deleted together with its sign-up accounts (those accounts have never been able to sign in).
+  // Anything else goes through deleteIfEmpty. Returns 'deleted' | 'not_found' | 'in_use'.
+  static async deleteRegistration(id) {
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [[org]] = await conn.query('SELECT status FROM organizations WHERE id = ? FOR UPDATE', [id]);
+      if (!org) { await conn.rollback(); return 'not_found'; }
+      const [[{ n }]] = await conn.query('SELECT COUNT(*) AS n FROM employees WHERE organization_id = ?', [id]);
+      if (!['pending', 'rejected'].includes(org.status) || n > 0) { await conn.rollback(); return 'in_use'; }
+      await conn.query('DELETE FROM users WHERE organization_id = ?', [id]);
+      await conn.query('DELETE FROM organizations WHERE id = ?', [id]);
+      await conn.commit();
+      return 'deleted';
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
   }
 
   // Deletes an organisation only when it has no user accounts and no employee records

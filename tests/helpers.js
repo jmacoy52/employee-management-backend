@@ -15,6 +15,7 @@ process.env.DB_URL = process.env.TEST_DB_URL;
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-only-secret-not-used-anywhere-else';
 process.env.AUTH_RATE_LIMIT_MAX = process.env.AUTH_RATE_LIMIT_MAX || '1000';
 process.env.ORG_SIGNUP_RATE_LIMIT_MAX = process.env.ORG_SIGNUP_RATE_LIMIT_MAX || '1000';
+process.env.ENQUIRY_RATE_LIMIT_MAX = process.env.ENQUIRY_RATE_LIMIT_MAX || '1000';
 
 const mysql = require('mysql2/promise');
 const { buildDbConfig } = require('../config/dbConfig');
@@ -25,7 +26,7 @@ const DB_DIR = path.join(__dirname, '..', 'db');
 async function resetDatabase({ seed = true, migrate = true } = {}) {
   const conn = await mysql.createConnection(buildDbConfig({ multipleStatements: true }));
   try {
-    await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, departments, employees, user_profiles, users, organizations; SET FOREIGN_KEY_CHECKS = 1;');
+    await conn.query('SET FOREIGN_KEY_CHECKS = 0; DROP TABLE IF EXISTS password_reset_tokens, schema_migrations, audit_logs, departments, employees, user_profiles, users, organizations, enquiries; SET FOREIGN_KEY_CHECKS = 1;');
     await conn.query(fs.readFileSync(path.join(DB_DIR, 'schema.sql'), 'utf8'));
     if (migrate) await runMigrations(conn, { log: () => {} });
     if (seed) await conn.query(fs.readFileSync(path.join(DB_DIR, 'seed.sql'), 'utf8'));
@@ -44,4 +45,7 @@ const DEMO = {
   employee: { email: 'kwame.mensah@emplocore.demo', password: 'Staff@EmploCore2026' },
 };
 
-module.exports = { resetDatabase, rawConnection, DEMO };
+// The organisation details the public sign-up form requires (merged into sign-up bodies in tests)
+const ORG_DETAILS = { organizationType: 'Private company', sizeRange: '11-50', country: 'Ghana', city: 'Accra', phone: '+233 20 000 0000' };
+
+module.exports = { resetDatabase, rawConnection, DEMO, ORG_DETAILS };

@@ -14,7 +14,7 @@ test('migrations upgrade a populated v1 database without data loss and are idemp
   await conn.query("INSERT INTO employees (FullName, email, position, Department, salary) VALUES ('Old Emp', 'old.emp@example.com', 'Clerk', 'Admin', 1000), ('Old Two', NULL, 'Driver', ' admin ', 900), ('Old Three', NULL, 'Cook', 'Kitchen', 800)");
   const [[before]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   const ran = await runMigrations(conn, { log: () => {} });
-  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql']);
+  assert.deepEqual(ran, ['001_users_account_status.sql', '002_password_reset_tokens.sql', '003_employees_user_link.sql', '004_departments.sql', '005_organizations.sql', '006_org_signup_details_enquiries.sql']);
   const [[afterCounts]] = await conn.query('SELECT (SELECT COUNT(*) FROM users) u, (SELECT COUNT(*) FROM employees) e');
   assert.deepEqual(afterCounts, before);
   const [[flags]] = await conn.query('SELECT MIN(is_active) a, MAX(token_version) v, MAX(must_change_password) m FROM users');

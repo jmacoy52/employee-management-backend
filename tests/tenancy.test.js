@@ -4,7 +4,7 @@
 // organisation may change.
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { resetDatabase, rawConnection, DEMO } = require('./helpers');
+const { resetDatabase, rawConnection, DEMO, ORG_DETAILS } = require('./helpers');
 
 let request, app, db, conn;
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
@@ -34,7 +34,7 @@ before(async () => {
   A.userId = r.body.userId;
 
   // Organisation B signs up, is approved, and its admin sets up HR, an employee and a department
-  const s = await request(app).post('/api/organizations/register').send({ organizationName: 'Kumasi Traders', adminName: 'Yaa Mensah', email: 'yaa@kumasi.example', password: PW });
+  const s = await request(app).post('/api/organizations/register').send({ ...ORG_DETAILS, organizationName: 'Kumasi Traders', adminName: 'Yaa Mensah', email: 'yaa@kumasi.example', password: PW });
   assert.equal(s.status, 201);
   await conn.query("UPDATE organizations SET status = 'active' WHERE slug = 'kumasi-traders'");
   const [[bOrg]] = await conn.query("SELECT id FROM organizations WHERE slug = 'kumasi-traders'");

@@ -2,7 +2,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const bcrypt = require('bcryptjs');
-const { resetDatabase, rawConnection, DEMO } = require('./helpers');
+const { resetDatabase, rawConnection, DEMO, ORG_DETAILS } = require('./helpers');
 
 const SETUP_TOKEN = 'test-setup-token-0123456789-abcdef';
 process.env.OWNER_SETUP_TOKEN_HASH = bcrypt.hashSync(SETUP_TOKEN, 4);
@@ -12,7 +12,7 @@ const PW = 'Password123';
 let request, app, db, conn, ownerToken, demoAdmin;
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
 const login = (email, password) => request(app).post('/api/users/login').send({ email, password });
-const signup = (body) => request(app).post('/api/organizations/register').send(body);
+const signup = (body) => request(app).post('/api/organizations/register').send({ ...ORG_DETAILS, ...body });
 const P = (path) => `/api/platform${path}`;
 const actions = async (action) => (await conn.query('SELECT * FROM audit_logs WHERE actions = ? ORDER BY LogId', [action]))[0];
 
@@ -38,6 +38,11 @@ test('organisation sign-up validates input', async () => {
     { ...good, email: 'not-an-email' },
     { ...good, password: 'short1' },
     { ...good, password: 'nodigitshere' },
+    { ...good, organizationType: 'Spaceship' },
+    { ...good, sizeRange: 'lots' },
+    { ...good, country: '' },
+    { ...good, phone: 'call me' },
+    { ...good, contactEmail: 'nope' },
   ];
   for (const body of bad) assert.equal((await signup(body)).status, 400, JSON.stringify(body));
   // Honeypot filled in -> refused, nothing created
@@ -59,6 +64,9 @@ test('organisation sign-up creates a pending organisation and its admin, who can
   assert.equal(l.status, 403);
   assert.equal(l.body.code, 'ORGANISATION_PENDING');
   assert.equal((await actions('REGISTER_ORGANIZATION')).length, 1);
+  // The sign-up details are stored; the contact person defaults to the admin
+  const [[details]] = await conn.query("SELECT org_type, size_range, country, city, phone, contact_name FROM organizations WHERE slug = 'tema-shipping'");
+  assert.deepEqual({ ...details }, { org_type: 'Private company', size_range: '11-50', country: 'Ghana', city: 'Accra', phone: '+233 20 000 0000', contact_name: 'Esi Owusu' });
   // Same name again gets its own slug
   const again = await signup({ organizationName: 'Tema Shipping', adminName: 'Kojo Owusu', email: 'kojo@tema.example', password: PW });
   assert.equal(again.body.organization.slug, 'tema-shipping-2');

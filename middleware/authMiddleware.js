@@ -14,6 +14,10 @@ const ORG_BLOCKED = {
     code: 'ORGANISATION_SUSPENDED',
     error: 'Your organisation\'s EmploCore account is suspended. Please contact EmploCore.',
   },
+  rejected: {
+    code: 'ORGANISATION_REJECTED',
+    error: 'Your organisation\'s registration was not approved. Please contact EmploCore if you think this is a mistake.',
+  },
 };
 
 // Returns { code, error } when this user may not use the app because of their organisation, else null.
@@ -21,11 +25,16 @@ const ORG_BLOCKED = {
 function organisationBlock(row) {
   if (row.role === 'owner') return row.organization_id === null ? null : ORG_BLOCKED.suspended;
   if (!row.organization_id || !row.organization_status) return ORG_BLOCKED.suspended;
-  return ORG_BLOCKED[row.organization_status] || null;
+  const blocked = ORG_BLOCKED[row.organization_status] || null;
+  // A rejected registration shows the owner's reason (if any) to the admin who tries to sign in
+  if (blocked && row.organization_status === 'rejected' && row.organization_rejection_reason) {
+    return { ...blocked, reason: row.organization_rejection_reason };
+  }
+  return blocked;
 }
 
 const ACCOUNT_SQL = `SELECT u.id, u.username, u.email, u.role, u.is_active, u.token_version, u.must_change_password,
-    u.organization_id, o.name AS organization_name, o.slug AS organization_slug, o.status AS organization_status
+    u.organization_id, o.name AS organization_name, o.slug AS organization_slug, o.status AS organization_status, o.rejection_reason AS organization_rejection_reason
   FROM users u LEFT JOIN organizations o ON o.id = u.organization_id
   WHERE u.id = ?`;
 

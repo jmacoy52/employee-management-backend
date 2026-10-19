@@ -7,7 +7,7 @@ const db = require('../config/db');
 const crypto = require('crypto');
 const AuditLogModel = require('../models/auditLogModel');
 const PasswordResetModel = require('../models/passwordResetModel');
-const { ROLES, DEFAULT_ROLE, passwordProblem } = require('../config/roles');
+const { ROLES, DEFAULT_ROLE, OWNER_ROLE, passwordProblem, ownerPasswordProblem } = require('../config/roles');
 const { isProtectedEmail, isProtectedUserId, sendDemoProtected } = require('../config/demoAccounts');
 const OrganizationModel = require('../models/organizationModel');
 const { organisationBlock } = require('../middleware/authMiddleware');
@@ -56,7 +56,7 @@ function publicUser(user, organization) {
 function findLoginAccount(email) {
   return new Promise((resolve, reject) => {
     db.query(
-      `SELECT u.*, o.name AS organization_name, o.slug AS organization_slug, o.status AS organization_status
+      `SELECT u.*, o.name AS organization_name, o.slug AS organization_slug, o.status AS organization_status, o.rejection_reason AS organization_rejection_reason
        FROM users u LEFT JOIN organizations o ON o.id = u.organization_id WHERE u.email = ?`,
       [email],
       (err, rows) => (err ? reject(err) : resolve(rows[0] || null))
@@ -354,7 +354,8 @@ class UserController {
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'Current and new password are required' });
     }
-    const problem = passwordProblem(newPassword);
+    // The platform owner's password follows the stricter owner rules
+    const problem = req.user.role === OWNER_ROLE ? ownerPasswordProblem(newPassword, req.user.email) : passwordProblem(newPassword);
     if (problem) return res.status(400).json({ error: problem });
     if (String(currentPassword) === String(newPassword)) {
       return res.status(400).json({ error: 'New password must be different from the current one' });
@@ -521,3 +522,4 @@ class UserController {
 }
 
 module.exports = UserController;
+module.exports.signToken = signToken;
