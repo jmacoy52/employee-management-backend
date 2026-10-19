@@ -4,7 +4,7 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { resetDatabase, rawConnection, DEMO, ORG_DETAILS } = require('./helpers');
-const { seedDemoPayroll } = require('../scripts/seed-payroll-demo');
+const { seedDemoPayroll, shouldSeedDemoPayroll } = require('../scripts/seed-payroll-demo');
 
 let request, app, db, conn;
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
@@ -288,4 +288,38 @@ test('validation of pay details and payroll runs', async () => {
   assert.equal(preview.status, 200);
   assert.equal(preview.body.net, 820362);
   assert.equal((await request(app).post(P('/preview')).set(auth(B.hr)).send({ period: '2024-01', basicSalary: '1' })).status, 400);
+});
+
+test('demo payroll seeding: only for the seeded demo data, never with DEMO_MODE=false, once', async () => {
+  const saved = { DEMO_MODE: process.env.DEMO_MODE, SEED_DEMO_PAYROLL: process.env.SEED_DEMO_PAYROLL };
+  const restore = () => { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } };
+  try {
+    // The demo organisation already has payroll: nothing to do
+    delete process.env.DEMO_MODE;
+    assert.equal(await shouldSeedDemoPayroll(conn), false);
+    assert.equal(await shouldSeedDemoPayroll(conn, { force: true }), true);
+    // Without payroll: seeded in demo mode (explicit or automatic), not with DEMO_MODE=false or the opt-out
+    await conn.query('SET FOREIGN_KEY_CHECKS = 0');
+    await conn.query('CREATE TEMPORARY TABLE saved_runs AS SELECT * FROM payroll_runs WHERE organization_id = ?', [A.orgId]);
+    await conn.query('DELETE FROM payroll_runs WHERE organization_id = ?', [A.orgId]);
+    try {
+      for (const [mode, optOut, expected] of [[undefined, undefined, true], ['true', undefined, true], ['false', undefined, false], [undefined, 'false', false]]) {
+        if (mode === undefined) delete process.env.DEMO_MODE; else process.env.DEMO_MODE = mode;
+        if (optOut === undefined) delete process.env.SEED_DEMO_PAYROLL; else process.env.SEED_DEMO_PAYROLL = optOut;
+        assert.equal(await shouldSeedDemoPayroll(conn), expected, `DEMO_MODE=${mode} SEED_DEMO_PAYROLL=${optOut}`);
+      }
+      // Organisation B is not the demo organisation; without the demo logins nothing is seeded either
+      delete process.env.DEMO_MODE; delete process.env.SEED_DEMO_PAYROLL;
+      await conn.query("UPDATE users SET email = 'hr.renamed@example.com' WHERE email = 'hr@emplocore.demo'");
+      assert.equal(await shouldSeedDemoPayroll(conn), false);
+      await conn.query("UPDATE users SET email = 'hr@emplocore.demo' WHERE email = 'hr.renamed@example.com'");
+    } finally {
+      await conn.query('INSERT INTO payroll_runs SELECT * FROM saved_runs');
+      await conn.query('DROP TEMPORARY TABLE saved_runs');
+      await conn.query('SET FOREIGN_KEY_CHECKS = 1');
+    }
+    assert.equal(await shouldSeedDemoPayroll(conn), false);
+  } finally {
+    restore();
+  }
 });

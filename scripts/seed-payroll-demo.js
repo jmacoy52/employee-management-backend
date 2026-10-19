@@ -4,11 +4,13 @@
 //
 // Called by scripts/init-db.js:
 //   - with SEED_DEMO=true / --seed (after db/seed.sql), and
-//   - on a public demo deployment (DEMO_MODE=true) whose demo organisation exists but has no payroll
-//     yet, so an existing demo database gets payslips without re-running the full seed.
-// It never runs against a database without the demo organisation, only touches @emplocore.demo
-// employee records of that organisation, and is idempotent (existing pay details and months are kept).
-// SEED_DEMO_PAYROLL=false turns the demo-deployment case off.
+//   - on a demo deployment whose demo data is already there (the demo organisation with the seeded
+//     demo logins and @emplocore.demo employees) but has no payroll yet, so an existing demo database
+//     gets payslips without re-running the full seed. Like the demo-account protection
+//     (config/demoAccounts.js), this applies unless DEMO_MODE=false: a database without the seeded
+//     demo data is never touched.
+// It only touches @emplocore.demo employee records of the demo organisation, and is idempotent
+// (existing pay details and months are kept). SEED_DEMO_PAYROLL=false turns the second case off.
 const crypto = require('crypto');
 const { calculatePayslip } = require('../services/payrollCalc');
 
@@ -38,16 +40,21 @@ function reference(period) {
   return `PS-${period.replace('-', '')}-${code}`;
 }
 
-function demoModeOn() {
-  return ['true', '1', 'yes', 'on'].includes(String(process.env.DEMO_MODE || '').trim().toLowerCase());
+// DEMO_MODE=false (a real deployment) never gets demo payroll automatically
+function demoModeOff() {
+  return ['false', '0', 'no', 'off'].includes(String(process.env.DEMO_MODE || '').trim().toLowerCase());
 }
 
 // Should init-db seed demo payroll? force = demo data is being seeded anyway.
 async function shouldSeedDemoPayroll(conn, { force = false } = {}) {
-  if (!force && (!demoModeOn() || String(process.env.SEED_DEMO_PAYROLL).toLowerCase() === 'false')) return false;
+  if (!force && (demoModeOff() || String(process.env.SEED_DEMO_PAYROLL).toLowerCase() === 'false')) return false;
   const [[org]] = await conn.query("SELECT id FROM organizations WHERE slug = 'demo'");
   if (!org) return false;
   if (force) return true;
+  // The seeded demo data must be there: the demo HR login and the demo employee records
+  const [[{ hr }]] = await conn.query("SELECT COUNT(*) AS hr FROM users WHERE organization_id = ? AND email = 'hr@emplocore.demo'", [org.id]);
+  const [[{ staff }]] = await conn.query("SELECT COUNT(*) AS staff FROM employees WHERE organization_id = ? AND email LIKE '%@emplocore.demo'", [org.id]);
+  if (!hr || !staff) return false;
   const [[{ runs }]] = await conn.query('SELECT COUNT(*) AS runs FROM payroll_runs WHERE organization_id = ?', [org.id]);
   return runs === 0;
 }
