@@ -2,9 +2,13 @@ const express = require('express');
 const router = express.Router();
 const BillingController = require('../controllers/billingController');
 const { authenticateToken, authorizeAdmin } = require('../middleware/authMiddleware');
+const { callbackLimiter } = require('../config/rateLimits');
 
 // Public: the price list (pricing page)
 router.get('/plans', BillingController.publicPlans);
+
+// Public: payment return page for a payer who is not signed in. Returns only a status word.
+router.post('/callback-status', callbackLimiter, BillingController.publicCallback);
 
 // Paystack webhook (public; authenticated by the x-paystack-signature HMAC). server.js mounts it with
 // express.raw before the JSON parser; this line only documents the path.

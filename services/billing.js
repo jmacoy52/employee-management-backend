@@ -1091,6 +1091,26 @@ async function resumeSubscription(organizationId, user) {
   return { status, graceEndsAt: graceEnds };
 }
 
+// Public return page for a payer who is not signed in (e.g. paid on another device). The reference is an
+// unguessable checkout id; the answer is only a status word, never organisation, plan, amount or e-mail.
+// Verified server-side with Paystack and applied exactly like the signed-in callback (idempotent).
+const PUBLIC_STATUSES = new Set(['activated', 'already', 'pending', 'ongoing', 'failed', 'abandoned', 'mismatch']);
+async function publicCallbackStatus(reference) {
+  const ref = String(reference || '').trim();
+  if (!/^[A-Za-z0-9._-]{6,100}$/.test(ref)) return { status: 'unknown' };
+  const [[co]] = await pool.query('SELECT reference, status FROM billing_checkouts WHERE reference = ?', [ref]);
+  if (!co) return { status: 'unknown' };
+  if (co.status === 'success') return { status: 'already' };
+  if (!B.paymentsEnabled()) return { status: 'pending' };
+  try {
+    const tx = await paystack.verifyTransaction(co.reference);
+    const r = await activateCheckout(co.reference, tx, { source: 'callback' });
+    return { status: PUBLIC_STATUSES.has(r.status) ? r.status : 'pending' };
+  } catch {
+    return { status: 'pending' };
+  }
+}
+
 // Payments settings card: never returns key values, only whether they are set and which mode they are
 function keyMode(key) {
   if (!key) return null;
@@ -1130,5 +1150,5 @@ module.exports = {
   billingOverview, planStatus, startCheckout, activateCheckout, verifyCheckout, cancelRenewal, manageLink, insertPayment,
   handleWebhook, recordRenewal, sanitise, eventKey,
   updatePlan, listCoupons, updateCoupon, extendTrial, assignPlan, applyFoundingDiscount, revenueOverview, organisationBilling, subscriptionSummaries,
-  endTrialNow, markPaid, cancelSubscription, pauseSubscription, resumeSubscription, paymentsSettings, keyMode, MANUAL_METHODS,
+  publicCallbackStatus, endTrialNow, markPaid, cancelSubscription, pauseSubscription, resumeSubscription, paymentsSettings, keyMode, MANUAL_METHODS,
 };

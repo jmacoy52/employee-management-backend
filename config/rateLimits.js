@@ -33,4 +33,14 @@ const enquiryLimiter = rateLimit({
   message: { error: 'Too many messages from this network. Please try again later, or e-mail us instead.' },
 });
 
-module.exports = { authLimiter, orgSignupLimiter, enquiryLimiter };
+// Public payment return page (signed-out payer): checks one reference with Paystack (per IP).
+//   CALLBACK_RATE_LIMIT_MAX per 15 minutes (default 30)
+const callbackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.CALLBACK_RATE_LIMIT_MAX) || 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a few minutes and try again.' },
+});
+
+module.exports = { authLimiter, orgSignupLimiter, enquiryLimiter, callbackLimiter };

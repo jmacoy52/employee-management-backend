@@ -86,3 +86,20 @@ Everything day to day is in the owner console, and every action is recorded in t
 - **Revenue → Payments settings**: test or live mode, keys set, webhook address, last webhook, last daily run.
 - **Plans and prices**: prices, limits, features and the founding offer.
 
+
+## Payer returns signed out
+
+Paystack returns the payer to `/admin/billing/callback?reference=…`. This page works without a session. A signed-in admin
+is verified with `POST /api/billing/verify`. A signed-out visitor (another device or an expired session) is checked with
+the public, rate-limited `POST /api/billing/callback-status`. It verifies the reference with Paystack server-side, applies
+it exactly as the webhook would (idempotently), and returns only a status word, never organisation, plan, amount or
+e-mail. The page then shows "Payment received, sign in to view your billing". Signing in returns to `/admin/billing`,
+because login honours a same-site `?next=` path.
+
+## Why checkout sometimes shows USD
+
+EmploCore always initialises transactions with `currency: GHS`, and a Ghana-registered Paystack business is charged
+and settled only in GHS. When the payer's browser or card is outside Ghana, Paystack's checkout may show an
+approximate figure in the payer's currency (for example "USD 5.24") with a "Pay in GHS instead" option. That is a
+display conversion. You still receive GHS. Code cannot turn this off. To limit it, go to Paystack Dashboard → Settings →
+Preferences and review the international payments and payment channel options.

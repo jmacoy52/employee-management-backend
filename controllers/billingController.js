@@ -80,6 +80,15 @@ class BillingController {
     }
   }
 
+  static async publicCallback(req, res) {
+    try {
+      res.set('Cache-Control', 'no-store');
+      res.json(await billing.publicCallbackStatus((req.body || {}).reference));
+    } catch (err) {
+      fail(res, err, 'check the payment');
+    }
+  }
+
   static async checkout(req, res) {
     try {
       const { plan, interval } = req.body || {};

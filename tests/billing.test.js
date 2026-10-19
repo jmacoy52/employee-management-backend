@@ -563,3 +563,15 @@ test('in-app daily scheduler: due from 06:00 UTC until a run succeeds that day',
   const second = await runDaily({ log: () => {} }); // a cron service as well: still safe
   assert.equal(second.skipped, false);
 });
+
+test('public callback status: signed-out payer gets only a status word; unknown references reveal nothing', async () => {
+  const r1 = await request(app).post('/api/billing/callback-status').send({ reference: 'EC-999-nope-000000' });
+  assert.deepEqual([r1.status, r1.body], [200, { status: 'unknown' }]);
+  assert.deepEqual((await request(app).post('/api/billing/callback-status').send({ reference: "x' OR 1=1" })).body, { status: 'unknown' });
+  const [[co]] = await conn.query('SELECT reference, organization_id FROM billing_checkouts LIMIT 1');
+  if (co) {
+    const r2 = await request(app).post('/api/billing/callback-status').send({ reference: co.reference });
+    assert.equal(r2.status, 200);
+    assert.deepEqual(Object.keys(r2.body), ['status']);
+  }
+});
