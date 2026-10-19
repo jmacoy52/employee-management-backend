@@ -4,15 +4,31 @@ const UserModel = require('../models/userModel');
 const UserProfileModel = require('../models/userProfileModel');
 const db = require('../config/db');
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const AuditLogModel = require('../models/auditLogModel');
+const { ROLES, PUBLIC_SIGNUP_ROLES, DEFAULT_ROLE, MIN_PASSWORD_LENGTH } = require('../config/roles');
+
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
 
 class UserController {
-  // Register new user
+  // Register new user.
+  // Public sign-up may only create 'employee' or 'hr' accounts; a signed-in admin
+  // (optionalAuth sets req.user) may also create 'admin' accounts.
   static async register(req, res) {
-    const { username, email, password, role } = req.body;
+    const { username, email, password } = req.body;
+    const role = (req.body.role || DEFAULT_ROLE).toString().trim().toLowerCase();
+    const isAdmin = req.user?.role === 'admin';
 
-    if (!username || !email || !password || !role) {
-      return res.status(400).json({ error: 'All fields are required' });
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Username, email and password are required' });
+    }
+    if (String(password).length < MIN_PASSWORD_LENGTH) {
+      return res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long` });
+    }
+    if (!ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Must be one of: ${ROLES.join(', ')}` });
+    }
+    if (!isAdmin && !PUBLIC_SIGNUP_ROLES.includes(role)) {
+      return res.status(403).json({ error: 'Admin accounts can only be created by an existing admin.' });
     }
 
     try {
@@ -25,7 +41,21 @@ class UserController {
       const newUser = { username, email, password: hashedPassword, role };
 
       UserModel.registerUser(newUser, (err, result) => {
-        if (err) return res.status(500).json({ error: 'Failed to register user' });
+        if (err) {
+          console.error('Error registering user:', err.message);
+          return res.status(500).json({ error: 'Failed to register user' });
+        }
+
+        AuditLogModel.insertLog({
+          userId: req.user?.id || result.insertId,
+          actions: 'REGISTER_USER',
+          descriptions: isAdmin
+            ? `User ${email} (${role}) created by ${req.user.email}`
+            : `User ${email} registered as ${role}`
+        }, (logErr) => {
+          if (logErr) console.error('Failed to insert audit log:', logErr.message);
+        });
+
         res.status(201).json({ message: 'User registered successfully', userId: result.insertId });
       });
 
@@ -38,10 +68,13 @@ class UserController {
         // UPDATE an existing user role
   static updateUserRole(req, res) {
     const userId = req.params.id;
-    const { role } = req.body;
+    const role = (req.body.role || '').toString().trim().toLowerCase();
 
-    if (!role) {
-      return res.status(400).json({ error: 'Role is required' });
+    if (!ROLES.includes(role)) {
+      return res.status(400).json({ error: `Invalid role. Must be one of: ${ROLES.join(', ')}` });
+    }
+    if (String(userId) === String(req.user.id)) {
+      return res.status(400).json({ error: 'You cannot change your own role' });
     }
 
     UserModel.updateUserRole(userId, { role }, (err, result) => {
@@ -53,6 +86,14 @@ class UserController {
       if (result.affectedRows === 0) {
         return res.status(404).json({ error: 'User not found' });
       }
+
+      AuditLogModel.insertLog({
+        userId: req.user.id,
+        actions: 'UPDATE_USER_ROLE',
+        descriptions: `User ${userId} role set to ${role} by ${req.user.email}`
+      }, (logErr) => {
+        if (logErr) console.error('Failed to insert audit log:', logErr.message);
+      });
 
       res.status(200).json({ message: 'User role updated successfully' });
     });
@@ -72,10 +113,13 @@ class UserController {
       const passwordMatch = await bcrypt.compare(password, user.password);
       if (!passwordMatch) return res.status(401).json({ error: 'Invalid credentials' });
 
-      const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
+      const token = jwt.sign(
+        { id: user.id, email: user.email, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: JWT_EXPIRES_IN }
+      );
 
       // Log the login action
-      const AuditLogModel = require('../models/auditLogModel');
       AuditLogModel.insertLog({
         userId: user.id,
         actions: 'LOGIN',
@@ -84,7 +128,11 @@ class UserController {
         if (err) console.error('Failed to log login action:', err);
       });
 
-      res.status(200).json({ message: 'Login successful', token });
+      res.status(200).json({
+        message: 'Login successful',
+        token,
+        user: { id: user.id, username: user.username, email: user.email, role: user.role }
+      });
 
     } catch (err) {
       console.error('Login error:', err);
@@ -93,7 +141,7 @@ class UserController {
   }
 
   static async getAllUsers(req, res) {
-    db.query('SELECT id, username, email, role, created_at FROM users', (err, results) => {
+    db.query('SELECT id, username, email, role, created_at FROM users ORDER BY id', (err, results) => {
       if (err) return res.status(500).json({ error: 'Server error' });
       res.json(results);
     });
@@ -102,6 +150,10 @@ class UserController {
   // Delete user (Admin only)
   static deleteUser(req, res) {
     const userId = req.params.id;
+
+    if (String(userId) === String(req.user.id)) {
+      return res.status(400).json({ error: 'You cannot delete your own account' });
+    }
 
     UserModel.deleteUser(userId, (err, result) => {
       if (err) {
@@ -114,7 +166,6 @@ class UserController {
       }
 
       // Log the delete user action
-      const AuditLogModel = require('../models/auditLogModel');
       AuditLogModel.insertLog({
         userId: req.user.id,
         actions: 'DELETE_USER',
@@ -132,7 +183,7 @@ class UserController {
     const userId = req.user.id; // From JWT middleware
 
     const query = `
-      SELECT u.username, u.email, u.role, up.first_name, up.last_name, up.phone, up.address
+      SELECT u.id, u.username, u.email, u.role, up.first_name, up.last_name, up.phone, up.address
       FROM users u
       LEFT JOIN user_profiles up ON u.id = up.user_id
       WHERE u.id = ?

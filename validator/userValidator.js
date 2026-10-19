@@ -1,4 +1,5 @@
 const { checkSchema } = require("express-validator");
+const { ROLES, MIN_PASSWORD_LENGTH } = require("../config/roles");
 
 // Import  UserModel to perform DB checks like email uniqueness
 const UserModel = require("../models/userModel");
@@ -32,17 +33,17 @@ const userValidationSchema = {
   
     password: {
       isLength: {
-        options: { min: 8 },
-        errorMessage: 'Password must be at least 8 characters long',
+        options: { min: MIN_PASSWORD_LENGTH },
+        errorMessage: `Password must be at least ${MIN_PASSWORD_LENGTH} characters long`,
       }
       
     },
   
     role: {
-      optional: true, // Make it optional so users default to 'hr'
+      optional: true, // Defaults to 'employee'. Who may pick which role is checked in the controller.
       isIn: {
-        options: [['hr', 'admin']], // Only allow 'hr' or 'admin'
-        errorMessage: 'Invalid role. Must be either hr or admin',
+        options: [ROLES],
+        errorMessage: `Invalid role. Must be one of: ${ROLES.join(', ')}`,
       }
     }
   };

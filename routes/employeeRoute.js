@@ -14,19 +14,19 @@ const handleValidation = (req, res, next) => {
   next();
 };
 
-// Route to get all employees (Authenticated users)
-router.get('/employees', authenticateToken, EmployeeController.getEmployees);
+// Route to get all employees (HR/Admin; employee records include salaries)
+router.get('/employees', authenticateToken, authorizeHR, EmployeeController.getEmployees);
 
-// Route to get a specific employee by ID (Authenticated users)
-router.get('/employees/:id', authenticateToken, EmployeeController.getEmployeeById);
+// Route to get a specific employee by ID (HR/Admin)
+router.get('/employees/:id', authenticateToken, authorizeHR, EmployeeController.getEmployeeById);
 
-// Route to create an employee (HR only)
+// Route to create an employee (HR/Admin)
 router.post('/employees', authenticateToken, authorizeHR, employeeValidation, handleValidation, EmployeeController.createEmployee);
 
-// Route to update an employee (HR only)
+// Route to update an employee (HR/Admin)
 router.put('/employees/:id', authenticateToken, authorizeHR, EmployeeController.updateEmployee);
 
-// Route to delete an employee (HR only)
+// Route to delete an employee (HR/Admin)
 router.delete('/employees/:id', authenticateToken, authorizeHR, EmployeeController.deleteEmployee);
 
 module.exports = router;

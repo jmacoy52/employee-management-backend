@@ -7,9 +7,23 @@ function authenticateToken(req, res, next) {
   if (!token) return res.status(401).json({ error: 'No token provided.' });
 
   jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid token.' });
+    if (err) {
+      const expired = err.name === 'TokenExpiredError';
+      return res.status(401).json({ error: expired ? 'Session expired. Please sign in again.' : 'Invalid token.' });
+    }
     req.user = user; // Attach user info to request
     next(); //proceeds to the controller
+  });
+}
+
+// Attaches req.user when a valid token is sent, but never blocks the request.
+function optionalAuth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return next();
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (!err) req.user = user;
+    next();
   });
 }
 
@@ -20,11 +34,12 @@ function authorizeAdmin(req, res, next) {
   next();
 }
 
+// HR features are available to HR users and admins.
 function authorizeHR(req, res, next) {
-  if (req.user.role !== 'hr') {
-    return res.status(403).json({ error: 'Access denied.' });
+  if (!['hr', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Access denied. HR or Admin role required.' });
   }
   next();
 }
 
-module.exports = { authenticateToken, authorizeAdmin, authorizeHR };
+module.exports = { authenticateToken, optionalAuth, authorizeAdmin, authorizeHR };

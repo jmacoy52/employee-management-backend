@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const UserController = require('../controllers/userController');
-const { authenticateToken, authorizeAdmin } = require('../middleware/authMiddleware');
+const { authenticateToken, optionalAuth, authorizeAdmin } = require('../middleware/authMiddleware');
 const userValidation = require('../validator/userValidator');
 const { validationResult } = require('express-validator');
 
@@ -14,8 +14,8 @@ const handleValidation = (req, res, next) => {
   next();
 };
 
-// Route to register a user (Public)
-router.post('/register', userValidation, handleValidation, UserController.register);
+// Route to register a user (Public: employee/hr only; an admin token may also create admins)
+router.post('/register', optionalAuth, userValidation, handleValidation, UserController.register);
 
 // Route to login a user (Public)
 router.post('/login', UserController.login);
